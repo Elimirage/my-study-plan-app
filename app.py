@@ -37,6 +37,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # ============================
 
 with tab1:
+
     st.header("📄 Загрузка ФГОС")
 
     uploaded_fgos = st.file_uploader("Загрузите файл ФГОС (PDF)", type=["pdf"])
@@ -47,6 +48,9 @@ with tab1:
 
         st.session_state.df_fgos = df_fgos
         st.session_state.fgos_text = text_fgos
+        st.subheader("Первые 500 символов текста ФГОС")
+        st.text(text_fgos[:500])
+
 
         st.subheader("Извлечённые компетенции")
         st.dataframe(df_fgos, use_container_width=True)
