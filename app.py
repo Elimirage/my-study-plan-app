@@ -351,90 +351,108 @@ def cluster_competencies_and_tf(df_fgos, tf_struct, profile_choice="Авто"):
         return []
 
 
-def generate_disciplines_for_cluster(cluster, df_fgos, tf_struct, profile_choice="Авто",
-                                     min_count=6, max_count=12):
+def generate_disciplines_for_cluster(
+    cluster, df_fgos, tf_struct, profile_choice="Авто",
+    min_count=6, max_count=12
+    ):
     """
-    Генерирует список дисциплин внутри одного кластера.
+    Генерирует дисциплины для одного кластера.
+    ИИ отвечает только за названия и смысл,
+    а распределение по блокам контролирует Python.
     """
+
     cluster_name = cluster.get("name", "Тематический модуль")
     cluster_desc = cluster.get("description", "")
     comp_codes = cluster.get("competencies", [])
     tf_codes = cluster.get("TF", [])
 
+    # Подготовка контекста
     fgos_filtered = df_fgos[df_fgos["code"].isin(comp_codes)]
     tf_all = tf_struct.get("TF", [])
     tf_filtered = [tf for tf in tf_all if tf.get("code") in tf_codes]
 
+    # --- PROMPT ---
     prompt = f"""
-    Ты — методист вуза РФ.
-    
-    Профиль: "{profile_choice}".
-    Кластер: "{cluster_name}".
-    Описание: "{cluster_desc}".
-    
-    Компетенции: {comp_codes}
-    Трудовые функции: {tf_codes}
-    
-    Сгенерируй {min_count}–{max_count} дисциплин.
-    
-    Правила распределения по блокам:
-    
-    1) Пропорции:
-    - 30–40% дисциплин должны быть обязательными.
-    - 60–70% дисциплин должны быть вариативными.
-    
-    2) Жёсткие ограничения:
-    - Обязательных дисциплин по всему плану должно быть НЕ БОЛЕЕ 20.
-    - Вариативных дисциплин по всему плану должно быть НЕ МЕНЕЕ 20.
-    - Если дисциплина может быть и обязательной, и вариативной — выбирай вариативную.
-    - Если кластер маленький, соблюдай пропорции внутри кластера.
-    
-    3) Что относится к обязательным дисциплинам:
-    - фундаментальные знания,
-    - математика,
-    - ИТ‑основы,
-    - проектная деятельность,
-    - коммуникации,
-    - общепрофессиональные навыки.
-    
-    4) Что относится к вариативным дисциплинам:
-    - узкие профессиональные навыки,
-    - инструменты,
-    - веб‑разработка,
-    - дизайн,
-    - SEO,
-    - мультимедиа,
-    - любые прикладные темы.
-    
-    Верни строго JSON:
+Ты — методист вуза РФ.
+
+Профиль: "{profile_choice}".
+Кластер: "{cluster_name}".
+Описание: "{cluster_desc}".
+
+Компетенции: {comp_codes}
+Трудовые функции: {tf_codes}
+
+Сгенерируй {min_count}–{max_count} дисциплин.
+
+Важно:
+- НЕ распределяй дисциплины по блокам.
+- НЕ используй слова "обязательная" или "вариативная".
+- Просто дай список дисциплин, связанных с кластером.
+- Каждая дисциплина должна быть уникальной.
+- Названия должны быть профессиональными и реалистичными.
+
+Верни строго JSON:
+{{
+  "disciplines": [
     {{
-      "disciplines": [
-        {{
-          "name": "Название",
-          "competencies": ["УК-1"],
-          "TF": ["A/01.3"],
-          "block_hint": "обязательная"
-        }}
-      ]
+      "name": "Название дисциплины",
+      "competencies": ["УК-1"],
+      "TF": ["A/01.3"]
     }}
-    """
-    
+  ]
+}}
+"""
 
-
-
+    # --- Вызов модели ---
     raw = call_yandex_lite(
         [{"role": "user", "text": prompt}],
         max_tokens=2000,
         temperature=0.3
     )
 
+    # --- Парсинг ---
     try:
         start = raw.index("{")
         end = raw.rindex("}") + 1
         data = json.loads(raw[start:end])
-        return data.get("disciplines", [])
+        discs = data.get("disciplines", [])
     except:
         return []
+
+    # --- Python распределяет блоки ---
+    # 30–40% обязательных, остальные вариативные
+    total = len(discs)
+    obligatory_target = max(1, int(total * 0.35))
+
+    obligatory = []
+    variative = []
+
+    # Ключевые слова для обязательных дисциплин
+    mandatory_keywords = [
+        "математ", "анализ", "основ", "введение", "информационн",
+        "программирован", "проект", "коммуникац", "базы данных",
+        "алгоритм", "архитектур", "сет", "инженер"
+    ]
+
+    for d in discs:
+        name = d.get("name", "").lower()
+
+        if any(k in name for k in mandatory_keywords) and len(obligatory) < obligatory_target:
+            d["block_hint"] = "обязательная"
+            obligatory.append(d)
+        else:
+            d["block_hint"] = "вариативная"
+            variative.append(d)
+
+    # Если обязательных слишком мало — добираем
+    if len(obligatory) < obligatory_target:
+        need = obligatory_target - len(obligatory)
+        for d in variative[:need]:
+            d["block_hint"] = "обязательная"
+            obligatory.append(d)
+
+    return obligatory + variative
+
 
 
 def generate_universal_disciplines(df_fgos, tf_struct, match_json, profile_choice="Авто"):
