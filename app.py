@@ -479,6 +479,7 @@ def is_fundamental(name: str):
     # 5. Всё остальное — вариативное
     return False
 
+
 def generate_universal_disciplines(df_fgos, tf_struct, match_json, profile_choice="Авто"):
     """
     Этап 1: кластеризация → дисциплины → удаление дублей → догенерация → ребалансировка блоков.
