@@ -1,23 +1,130 @@
-import requests 
-import json 
-import pytesseract 
+import requests
+import json
+import pytesseract
 import streamlit as st
-YANDEX_API_KEY = st.secrets["YANDEX_API_KEY"]
 
+# ============================
+# Настройки API
+# ============================
+
+YANDEX_API_KEY = st.secrets["YANDEX_API_KEY"]
 FOLDER_ID = "b1gduq5bjgu0km5qubgu"
 
-YANDEX_API_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
-YANDEX_MODEL_LITE = "yandexgpt-lite"
+YANDEX_MODEL_LITE = "yandexgpt-lite"     # для enrich
+YANDEX_MODEL_CHAT = "yandexgpt"          # для чата через completion API
+
+YANDEX_COMPLETION_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
 # Путь к Tesseract (Windows)
 pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
 
-def call_yandex_lite(messages, temperature=0.3, max_tokens=1500):
+
+# ============================
+# ЧАТ (через completion API)
+# ============================
+def completion_with_ai(prompt: str) -> str:
     """
-    Универсальная функция вызова YandexGPT Lite.
-    messages — список сообщений [{"role": "user", "text": "..."}]
+    Генерация JSON-команды редактирования таблицы через YandexGPT (completion API).
+    Работает с ключом yc.ai.foundationModels.execute.
     """
 
+    headers = {
+        "Authorization": f"Api-Key {YANDEX_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    system_prompt = """
+Ты — ИИ, который ДОЛЖЕН возвращать строго JSON.
+
+ТВОИ ЖЁСТКИЕ ПРАВИЛА:
+1) Никакого текста до JSON.
+2) Никакого текста после JSON.
+3) Никаких комментариев.
+4) Никаких пояснений.
+5) Только один объект JSON.
+
+Формат JSON-команды:
+
+UPDATE:
+{
+  "action": "update",
+  "discipline": "Название",
+  "field": "Часы",
+  "value": 72
+}
+
+DELETE:
+{
+  "action": "delete",
+  "discipline": "Название"
+}
+
+ADD:
+{
+  "action": "add",
+  "field": "row",
+  "value": {
+    "Блок": "...",
+    "Семестр": 1,
+    "Дисциплина": "...",
+    "Часы": 72,
+    "Форма контроля": "зачёт",
+    "Компетенции ФГОС": [],
+    "Трудовые функции": "",
+    "Обоснование": "Добавлено вручную"
+  }
+}
+
+ЕСЛИ НЕ МОЖЕШЬ ПОНЯТЬ КОМАНДУ — ВЕРНИ:
+{
+  "action": "error",
+  "value": "Причина"
+}
+"""
+
+    data = {
+        "modelUri": f"gpt://{FOLDER_ID}/yandexgpt",
+        "completionOptions": {
+            "stream": False,
+            "temperature": 0.1,
+            "maxTokens": 500
+        },
+        "messages": [
+            {"role": "system", "text": system_prompt},
+            {"role": "user", "text": prompt}
+        ]
+    }
+
+    response = requests.post(
+        YANDEX_COMPLETION_URL,
+        headers=headers,
+        json=data
+    )
+
+    raw = response.text  # сохраняем сырой ответ
+
+    # Попытка распарсить JSON
+    try:
+        result = response.json()
+        text = result["result"]["alternatives"][0]["message"]["text"]
+    except:
+        return f"Ошибка: модель вернула не JSON.\nСырой ответ:\n{raw}"
+
+    # Попытка найти JSON внутри текста
+    try:
+        start = text.index("{")
+        end = text.rindex("}") + 1
+        json_str = text[start:end]
+        return json_str
+    except:
+        return f"Не удалось извлечь JSON.\nОтвет модели:\n{text}"
+
+
+# ============================
+# Вызов YandexGPT Lite (для enrich)
+# ============================
+
+def call_yandex_lite(messages, temperature=0.3, max_tokens=1500):
     headers = {
         "Authorization": f"Api-Key {YANDEX_API_KEY}",
         "Content-Type": "application/json"
@@ -33,15 +140,11 @@ def call_yandex_lite(messages, temperature=0.3, max_tokens=1500):
         "messages": messages
     }
 
-    try:
-        response = requests.post(
-            YANDEX_API_URL,
-            headers=headers,
-            json=data,
-            timeout=90
-        )
-    except Exception as e:
-        return f"Ошибка сети при обращении к YandexGPT: {e}"
+    response = requests.post(
+        YANDEX_COMPLETION_URL,
+        headers=headers,
+        json=data
+    )
 
     try:
         result = response.json()
@@ -58,14 +161,10 @@ def call_yandex_lite(messages, temperature=0.3, max_tokens=1500):
 
 
 # ============================
-# Обогащение дисциплины (ИИ)
+# Обогащение дисциплины
 # ============================
 
 def enrich_discipline_metadata(discipline, df_fgos, tf_struct):
-    """
-    Определяет компетенции, ТФ и обоснование для дисциплины.
-    """
-
     prompt = f"""
 Ты — методист вуза РФ.
 
@@ -101,8 +200,4 @@ def enrich_discipline_metadata(discipline, df_fgos, tf_struct):
         end = raw.rindex("}") + 1
         return json.loads(raw[start:end])
     except:
-        return {
-            "competencies": [],
-            "TF": [],
-            "reason": ""
-        }
+        return {"competencies": [], "TF": [], "reason": ""}

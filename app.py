@@ -1,145 +1,170 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
+import io
 import json
 
-from fgos import extract_text_from_pdf_file, extract_competencies_full, detect_profile_from_fgos
-from profstandart import analyze_prof_standard, match_fgos_and_prof
 from plan import generate_plan_pipeline
-from utils import dataframe_to_excel_bytes
+from ai import completion_with_ai
 
 
-st.set_page_config(
-    page_title="Генератор учебного плана",
-    layout="wide"
-)
+# ============================================================
+# Утилита: применение команды к DataFrame
+# ============================================================
 
-st.title("📘 Генератор учебного плана по ФГОС и профстандарту")
+def apply_edit_command(df: pd.DataFrame, command: dict) -> tuple[pd.DataFrame, str]:
+    """
+    Применяет JSON-команду к DataFrame.
+    Возвращает (обновленный_df, текст_результата).
+    """
 
+    action = command.get("action")
 
-# Универсальная функция нормализации
-def normalize_cell(x):
-    if isinstance(x, (list, tuple, set, np.ndarray)):
-        return ", ".join(map(str, x))
-    if isinstance(x, dict):
-        return json.dumps(x, ensure_ascii=False)
-    return x
+    if action == "update":
+        disc = command.get("discipline")
+        field = command.get("field")
+        value = command.get("value")
 
+        if disc is None or field is None:
+            return df, "Команда некорректна: нет discipline или field."
 
-def normalize_df(df):
-    df = df.copy()
-    for col in df.columns:
-        df[col] = df[col].apply(normalize_cell)
-    return df
+        if field not in df.columns:
+            return df, f"Поле '{field}' не найдено в таблице."
 
+        mask = df["Дисциплина"] == disc
+        if not mask.any():
+            return df, f"Дисциплина '{disc}' не найдена."
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📄 ФГОС",
-    "📄 Профстандарт",
-    "🔗 Сопоставление",
-    "📚 Генерация плана",
-    "📥 Экспорт"
-])
+        df.loc[mask, field] = value
+        return df, f"Обновлено поле '{field}' у дисциплины '{disc}' → {value}."
 
+    elif action == "delete":
+        disc = command.get("discipline")
+        if disc is None:
+            return df, "Команда некорректна: нет discipline."
 
-# ---------------- TAB 1 ----------------
-with tab1:
-    st.header("📄 Загрузка ФГОС")
+        before = len(df)
+        df = df[df["Дисциплина"] != disc].reset_index(drop=True)
+        after = len(df)
 
-    uploaded_fgos = st.file_uploader("Загрузите файл ФГОС (PDF)", type=["pdf"])
-
-    if uploaded_fgos:
-        text_fgos = extract_text_from_pdf_file(uploaded_fgos)
-        df_fgos = pd.DataFrame(extract_competencies_full(text_fgos))
-
-        st.session_state.df_fgos = df_fgos
-        st.session_state.fgos_text = text_fgos
-
-        st.subheader("Первые 500 символов текста ФГОС")
-        st.text(text_fgos[:500])
-
-        st.subheader("Извлечённые компетенции")
-        st.dataframe(df_fgos, use_container_width=True)
-
-        profiles = detect_profile_from_fgos(text_fgos)
-        st.session_state.detected_profiles = profiles
-
-        st.success(f"Определён профиль: {', '.join(profiles)}")
-
-
-# ---------------- TAB 2 ----------------
-with tab2:
-    st.header("📄 Загрузка профстандарта")
-
-    uploaded_prof = st.file_uploader("Загрузите файл профстандарта (PDF)", type=["pdf"])
-
-    if uploaded_prof:
-        text_prof = extract_text_from_pdf_file(uploaded_prof)
-        tf_struct, error = analyze_prof_standard(text_prof)
-
-        if error:
-            st.error(error)
+        if before == after:
+            return df, f"Дисциплина '{disc}' не найдена."
         else:
-            st.session_state.tf_struct = tf_struct
-            st.success(f"Найдено {len(tf_struct['TF'])} трудовых функций")
+            return df, f"Дисциплина '{disc}' удалена."
 
+    elif action == "add":
+        field = command.get("field")
+        value = command.get("value")
 
-# ---------------- TAB 3 ----------------
-with tab3:
-    st.header("🔗 Сопоставление ФГОС и профстандарта")
+        if field != "row" or not isinstance(value, dict):
+            return df, "Команда add некорректна: ожидается field='row' и объект value."
 
-    if "df_fgos" in st.session_state and "tf_struct" in st.session_state:
-        match_json, error = match_fgos_and_prof(
-            st.session_state.df_fgos,
-            st.session_state.tf_struct
-        )
+        new_row = {}
+        for col in df.columns:
+            new_row[col] = value.get(col, None)
 
-        st.session_state.match_json = match_json
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        return df, f"Добавлена новая дисциплина '{value.get('Дисциплина', 'Без названия')}'."
 
-        st.success("Сопоставление выполнено")
-        st.json(match_json)
+    elif action == "error":
+        return df, f"Ошибка на стороне ИИ: {command.get('value')}"
+
     else:
-        st.warning("Загрузите ФГОС и профстандарт")
+        return df, f"Неизвестное действие: {action}"
 
 
-# ---------------- TAB 4 ----------------
-with tab4:
-    st.header("📚 Генерация учебного плана")
+# ============================================================
+# UI: две вкладки
+# ============================================================
 
-    ready = all(k in st.session_state for k in [
-        "df_fgos", "tf_struct", "match_json", "fgos_text"
-    ])
-
-    if not ready:
-        st.warning("Не хватает данных для генерации плана")
-    else:
-        if st.button("🔄 Сгенерировать учебный план заново"):
-            df_plan = generate_plan_pipeline(
-                st.session_state.df_fgos,
-                st.session_state.tf_struct,
-                st.session_state.match_json,
-                st.session_state.fgos_text
-            )
-            st.session_state.df_plan = df_plan
-
-        if "df_plan" in st.session_state:
-            st.success("Учебный план готов")
-
-            df = normalize_df(st.session_state.df_plan)
-            st.dataframe(df, use_container_width=True)
+tab_plan, tab_chat = st.tabs(["📘 Учебный план", "💬 Чат с ИИ"])
 
 
-# ---------------- TAB 5 ----------------
-with tab5:
-    st.header("📥 Экспорт учебного плана")
+# ============================================================
+# 📘 Вкладка 1 — Генерация учебного плана
+# ============================================================
 
-    if "df_plan" in st.session_state:
-        bytes_xlsx = dataframe_to_excel_bytes(st.session_state.df_plan)
+with tab_plan:
+    st.header("Генерация учебного плана")
+
+    uploaded_fgos = st.file_uploader("Загрузите ФГОС", type=["pdf", "txt"])
+    uploaded_tf = st.file_uploader("Загрузите профстандарт", type=["pdf", "txt"])
+
+    if uploaded_fgos and uploaded_tf:
+
+        try:
+            fgos_text = uploaded_fgos.read().decode("utf-8", errors="ignore")
+        except:
+            fgos_text = ""
+
+        df_fgos = pd.DataFrame()
+        tf_struct = {}
+
+        df = generate_plan_pipeline(df_fgos, tf_struct, {}, fgos_text)
+
+        # сохраняем в сессию, чтобы чат мог редактировать
+        st.session_state.df = df
+
+        st.subheader("Сформированный учебный план")
+        st.dataframe(df, use_container_width=True)
+
+        buffer = io.BytesIO()
+        df.to_excel(buffer, index=False, engine="openpyxl")
+        buffer.seek(0)
 
         st.download_button(
-            "📥 Скачать учебный план в Excel",
-            data=bytes_xlsx,
-            file_name="учебный_план.xlsx"
+            label="📥 Скачать учебный план (Excel)",
+            data=buffer,
+            file_name="учебный_план.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+
+# ============================================================
+# 💬 Вкладка 2 — Чат с ИИ (редактирование плана)
+# ============================================================
+
+with tab_chat:
+    st.header("Чат для редактирования учебного плана")
+
+    if "df" not in st.session_state:
+        st.info("Сначала сгенерируй учебный план во вкладке 'Учебный план'.")
     else:
-        st.warning("Сначала сгенерируйте учебный план")
+        df = st.session_state.df
+
+        st.subheader("Текущий учебный план")
+        st.dataframe(df, use_container_width=True)
+
+        if "messages" not in st.session_state:
+            st.session_state.messages = []
+
+        for msg in st.session_state.messages:
+            st.chat_message(msg["role"]).write(msg["content"])
+
+        prompt = st.chat_input("Опиши, что изменить в плане (часы, форму контроля, добавить/удалить дисциплину)...")
+
+        if prompt:
+            st.session_state.messages.append({"role": "user", "content": prompt})
+
+            raw_reply = completion_with_ai(prompt)
+
+
+            try:
+                command = json.loads(raw_reply)
+            except Exception:
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": f"Не удалось разобрать ответ ИИ как JSON:\n{raw_reply}"
+                })
+            else:
+                df_updated, result_text = apply_edit_command(df, command)
+                st.session_state.df = df_updated
+
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": result_text
+                })
+
+            st.chat_message("assistant").write(st.session_state.messages[-1]["content"])
+
+        st.subheader("Обновлённый учебный план")
+        st.dataframe(st.session_state.df, use_container_width=True)
