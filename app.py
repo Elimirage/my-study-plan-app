@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-
+import numpy as np
+import json
 from fgos import extract_text_from_pdf_file, extract_competencies_full, detect_profile_from_fgos
 from profstandart import analyze_prof_standard, match_fgos_and_prof
 from plan import generate_plan_pipeline
@@ -118,10 +119,22 @@ with tab4:
             # Преобразуем списки компетенций в строки, чтобы PyArrow не падал
             df = st.session_state.df_plan.copy()
 
-            if "Компетенции" in df.columns:
-                df["Компетенции"] = df["Компетенции"].apply(
-                    lambda x: ", ".join(x) if isinstance(x, list) else x
-                )
+            
+
+            df = st.session_state.df_plan.copy()
+
+            def normalize_cell(x):
+                if isinstance(x, (list, tuple, set, np.ndarray)):
+                    return ", ".join(map(str, x))
+                if isinstance(x, dict):
+                    return json.dumps(x, ensure_ascii=False)
+                return x
+
+            for col in df.columns:
+                df[col] = df[col].apply(normalize_cell)
+
+            st.dataframe(df, use_container_width=True)
+
 
             st.dataframe(df, use_container_width=True)
 
