@@ -589,26 +589,31 @@ def assign_blocks(disciplines):
 
 
 
-def enrich_discipline_metadata(discipline):
+def enrich_discipline_metadata(discipline, df_fgos, tf_struct):
     """
-    Lite получает ОДНУ дисциплину → возвращает:
-    - компетенции (строкой)
-    - ТФ (списком)
-    - короткое обоснование (до 150 символов)
+    Улучшенная версия: передаём контекст ФГОС и ТФ,
+    чтобы модель выбирала компетенции осознанно.
     """
+
     prompt = f"""
 Ты — методист вуза РФ.
 
-Дисциплина: "{discipline['name']}"
+Тебе дана дисциплина: "{discipline['name']}".
 
-Добавь:
-- Компетенции ФГОС (строкой, например: "УК-1, ОПК-2")
-- Трудовые функции (списком кодов)
-- Обоснование (1–2 коротких предложения, до 150 символов)
+Вот список компетенций ФГОС:
+{df_fgos.to_json(orient="records", force_ascii=False)}
+
+Вот список трудовых функций профстандарта:
+{json.dumps(tf_struct.get("TF", []), ensure_ascii=False)}
+
+Определи:
+- какие компетенции формирует эта дисциплина (2–4 кода),
+- какие трудовые функции она поддерживает (0–3 кода),
+- короткое обоснование (до 150 символов).
 
 Верни строго JSON:
 {{
-  "competencies": "УК-1, ОПК-2",
+  "competencies": ["УК-1", "ОПК-2"],
   "TF": ["A/01.3"],
   "reason": "Короткое обоснование"
 }}
@@ -617,7 +622,7 @@ def enrich_discipline_metadata(discipline):
     raw = call_yandex_lite(
         [{"role": "user", "text": prompt}],
         temperature=0.2,
-        max_tokens=500
+        max_tokens=700
     )
 
     try:
@@ -626,10 +631,11 @@ def enrich_discipline_metadata(discipline):
         return json.loads(raw[start:end])
     except:
         return {
-            "competencies": "",
+            "competencies": [],
             "TF": [],
             "reason": ""
         }
+
 
 
 def prepare_block_structure(disciplines_with_hours):
