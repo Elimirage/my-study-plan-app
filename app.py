@@ -9,9 +9,6 @@ import pytesseract
 from pdf2image import convert_from_bytes
 from PIL import Image
 
-# =========================
-# Настройки YandexGPT Lite
-# =========================
 
 import streamlit as st
 
@@ -24,10 +21,6 @@ YANDEX_MODEL_LITE = "yandexgpt-lite"
 # Путь к Tesseract (Windows)
 pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
 
-
-# =========================
-# Базовая функция вызова YandexGPT Lite
-# =========================
 
 def call_yandex_lite(messages, temperature=0.3, max_tokens=1500):
     headers = {
@@ -61,10 +54,6 @@ def call_yandex_lite(messages, temperature=0.3, max_tokens=1500):
     except Exception:
         return f"Ошибка при разборе ответа YandexGPT: {result}"
 
-
-# =========================
-# Вспомогательные функции
-# =========================
 
 def extract_text_from_pdf_file(uploaded_file):
     """
@@ -121,9 +110,7 @@ def dataframe_to_excel_bytes(df):
     return output.getvalue()
 
 
-# =========================
-# Анализ профессионального стандарта
-# =========================
+
 
 def extract_tf_codes_smart(full_text):
     """
@@ -306,10 +293,6 @@ def match_fgos_and_prof(df_fgos, tf_struct):
             "recommendations": ["ИИ вернул некорректный JSON при сопоставлении."]
         }, raw
 
-
-# =========================
-# Универсальная генерация дисциплин (Этап 1)
-# =========================
 
 def cluster_competencies_and_tf(df_fgos, tf_struct, profile_choice="Авто"):
     """
@@ -520,9 +503,7 @@ def generate_disciplines_from_fgos_and_prof(df_fgos, tf_struct, match_json, prof
     discs = generate_universal_disciplines(df_fgos, tf_struct, match_json, profile_choice)
     st.session_state.debug_disciplines = discs
     return discs
-# =========================
-# Этап 2: назначение часов и форм контроля
-# =========================
+
 
 def assign_hours_and_assessment(disciplines):
     """
@@ -563,10 +544,6 @@ def assign_hours_and_assessment(disciplines):
     except:
         return disciplines
 
-
-# =========================
-# Этап 3.1 — распределение по блокам (обязательная / вариативная)
-# =========================
 
 def assign_blocks(disciplines):
     """
@@ -610,9 +587,7 @@ def assign_blocks(disciplines):
         return []
 
 
-# =========================
-# Этап 3.2 — распределение компетенций, ТФ и короткого обоснования
-# =========================
+
 
 def enrich_discipline_metadata(discipline):
     """
@@ -657,10 +632,6 @@ def enrich_discipline_metadata(discipline):
         }
 
 
-# =========================
-# Этап 3.3 — подготовка данных для распределения по семестрам
-# =========================
-
 def prepare_block_structure(disciplines_with_hours):
     """
     Возвращает структуру:
@@ -683,9 +654,7 @@ def prepare_block_structure(disciplines_with_hours):
             block_map.setdefault(block, []).append(name)
 
     return block_map
-# =========================
-# Этап 3.4 — автоматическое распределение дисциплин по семестрам (Python)
-# =========================
+
 
 def distribute_evenly(items, semester_ranges):
     """
@@ -710,7 +679,7 @@ def distribute_evenly(items, semester_ranges):
         selected = items[idx: idx + portion]
         idx += portion
 
-        # равномерно распределяем выбранные дисциплины по семестрам группы
+        
         for i, disc in enumerate(selected):
             sem = group[i % count]
             result[disc] = sem
@@ -718,7 +687,7 @@ def distribute_evenly(items, semester_ranges):
         if idx >= len(items):
             break
 
-    # если остались дисциплины — кладём в последние семестры
+    
     if idx < len(items):
         tail = items[idx:]
         last_group = semester_ranges[-1]
@@ -768,9 +737,6 @@ def distribute_by_semesters(block_map):
     return semester_map
 
 
-# =========================
-# Этап 3.5 — сборка итогового плана
-# =========================
 
 def assign_semesters_and_blocks(disciplines_with_hours, structure_mode="old"):
     """
@@ -856,9 +822,7 @@ def assign_semesters_and_blocks(disciplines_with_hours, structure_mode="old"):
     })
 
     return rows
-# =========================
-# Полный пайплайн генерации учебного плана
-# =========================
+
 
 def generate_plan_pipeline(df_fgos, tf_struct, match_json, profile_choice, structure_mode="old"):
     """
@@ -908,9 +872,7 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, profile_choice, struc
 
     return df
 
-# =========================
-# Построение таблиц ТФ (df_tf и df_content)
-# =========================
+
 
 def build_tf_dataframes(tf_struct):
     """
@@ -963,9 +925,7 @@ def build_tf_dataframes(tf_struct):
 
     return df_tf, df_content
 
-# =========================
-# ИИ‑редактор учебного плана
-# =========================
+
 
 def apply_ai_edit_proposal(user_text, df_current):
     """
@@ -1048,9 +1008,7 @@ def apply_ai_edit_proposal(user_text, df_current):
     ]]
 
     return df_new, comment
-# =========================
-# Streamlit‑приложение
-# =========================
+
 
 def main():
     st.set_page_config(
@@ -1272,9 +1230,7 @@ div[role="combobox"] * {
         "ИИ‑редактор учебного плана"
     ])
 
-    # =========================
-    # Вкладка 1: Нормативная база
-    # =========================
+    
     with tab_normative:
         st.header("Нормативная база: ФГОС + профессиональные стандарты")
 
@@ -1304,7 +1260,7 @@ div[role="combobox"] * {
                     "fgos_competencies.xlsx"
                 )
 
-        # ---- Профстандарт ----
+        
         st.subheader("2. Профессиональные стандарты")
 
         uploaded_ps = st.file_uploader(
@@ -1357,7 +1313,7 @@ div[role="combobox"] * {
                         df_sub = df_content[df_content["Код ТФ"] == code]
                         st.dataframe(df_sub, use_container_width=True)
 
-        # ---- Сопоставление ----
+        
         st.subheader("3. Сопоставление ФГОС ↔ профстандарты")
 
         if "df_fgos" in st.session_state and "ps_struct" in st.session_state:
@@ -1387,9 +1343,7 @@ div[role="combobox"] * {
         else:
             st.info("Для сопоставления загрузите ФГОС и профстандарт.")
 
-    # =========================
-    # Вкладка 2: Генерация учебного плана
-    # =========================
+    
     with tab_generate:
         st.header("Генерация учебного плана")
 
@@ -1439,9 +1393,6 @@ div[role="combobox"] * {
                     "uchebny_plan.xlsx"
                 )
 
-    # =========================
-    # Вкладка 3: ИИ‑редактор учебного плана
-    # =========================
     with tab_editor:
         st.header("ИИ‑редактор учебного плана")
 
