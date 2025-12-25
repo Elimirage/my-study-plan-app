@@ -744,7 +744,7 @@ def distribute_by_semesters(block_map):
 
 
 
-def assign_semesters_and_blocks(disciplines_with_hours, structure_mode="old"):
+def assign_semesters_and_blocks(disciplines_with_hours, df_fgos, tf_struct, structure_mode="old"):
     """
     Полностью новый Этап 3:
     - блоки (ИИ)
@@ -761,7 +761,7 @@ def assign_semesters_and_blocks(disciplines_with_hours, structure_mode="old"):
     # 3.3 — метаданные (ИИ)
     enriched = {}
     for d in disciplines_with_hours:
-        enriched[d["name"]] = enrich_discipline_metadata(d)
+        enriched[d["name"]] = enrich_discipline_metadata(d, df_fgos, tf_struct)
 
     # 3.4 — сборка строк
     rows = []
@@ -855,7 +855,12 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, profile_choice, struc
     st.session_state.debug_disciplines_hours = disciplines_with_hours
 
     # Этап 3
-    plan_rows = assign_semesters_and_blocks(disciplines_with_hours, structure_mode="old")
+    plan_rows = assign_semesters_and_blocks(
+    disciplines_with_hours,
+    df_fgos,
+    tf_struct,
+    structure_mode="old")
+
     if not plan_rows:
         return pd.DataFrame()
 
