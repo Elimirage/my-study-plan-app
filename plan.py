@@ -4,50 +4,53 @@ from ai import enrich_discipline_metadata
 
 
 # ============================
-# 1. Распределение по семестрам
+# 0. Удаление дублей дисциплин
 # ============================
-def distribute_semesters(obligatory, variative):
+
+def remove_duplicates(discs):
+    """
+    Удаляет дубли дисциплин по названию.
+    Сохраняет первую встреченную дисциплину.
+    """
+    seen = set()
+    unique = []
+    for d in discs:
+        name = d["name"].strip().lower()
+        if name not in seen:
+            seen.add(name)
+            unique.append(d)
+    return unique
+
+
+# ============================
+# 1. Идеальное распределение по семестрам
+# ============================
+
+def balanced_distribution(obligatory, variative):
     """
     Равномерное распределение дисциплин по семестрам.
-    Обязательные растягиваются по 1–6, вариативные — по 3–7.
+    Обязательные → 1–6
+    Вариативные → 3–7
+    Разница между семестрами ≤ 1 дисциплина.
     """
 
     semester_plan = {s: [] for s in range(1, 8)}
 
-    max_per_sem_oblig = 4
-    max_per_sem_var = 4
-
-    obligatory_semesters = [1, 2, 3, 4, 5, 6]
-    variative_semesters = [3, 4, 5, 6, 7]
-
-    # --- обязательные: равномерно по 1–6 ---
-    sem_idx = 0
-    counters = {s: 0 for s in obligatory_semesters}
-
+    # --- распределяем обязательные ---
+    sems_obl = [1, 2, 3, 4, 5, 6]
+    idx = 0
     for disc in obligatory:
-        # крутимся по семестрам, пока не найдём тот, где есть место
-        for _ in range(len(obligatory_semesters)):
-            sem = obligatory_semesters[sem_idx]
-            if counters[sem] < max_per_sem_oblig:
-                semester_plan[sem].append(disc)
-                counters[sem] += 1
-                sem_idx = (sem_idx + 1) % len(obligatory_semesters)
-                break
-            sem_idx = (sem_idx + 1) % len(obligatory_semesters)
+        sem = sems_obl[idx % len(sems_obl)]
+        semester_plan[sem].append(disc)
+        idx += 1
 
-    # --- вариативные: равномерно по 3–7 ---
-    sem_idx = 0
-    counters_var = {s: 0 for s in variative_semesters}
-
+    # --- распределяем вариативные ---
+    sems_var = [3, 4, 5, 6, 7]
+    idx = 0
     for disc in variative:
-        for _ in range(len(variative_semesters)):
-            sem = variative_semesters[sem_idx]
-            if counters_var[sem] < max_per_sem_var:
-                semester_plan[sem].append(disc)
-                counters_var[sem] += 1
-                sem_idx = (sem_idx + 1) % len(variative_semesters)
-                break
-            sem_idx = (sem_idx + 1) % len(variative_semesters)
+        sem = sems_var[idx % len(sems_var)]
+        semester_plan[sem].append(disc)
+        idx += 1
 
     return semester_plan
 
@@ -94,6 +97,7 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
     Полный пайплайн:
     - определение профиля
     - генерация дисциплин
+    - удаление дублей
     - распределение по семестрам
     - назначение форм контроля
     - enrich дисциплин
@@ -108,19 +112,22 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
     # 2. Генерируем дисциплины под профиль
     discs = generate_disciplines(profile)
 
-    # 3. Разделяем по блокам
+    # 3. Удаляем дубли
+    discs = remove_duplicates(discs)
+
+    # 4. Разделяем по блокам
     obligatory = [d["name"] for d in discs if d["block_hint"] == "обязательная"]
     variative = [d["name"] for d in discs if d["block_hint"] == "вариативная"]
 
-    # 4. Распределяем по семестрам
-    semester_map = distribute_semesters(obligatory, variative)
+    # 5. Равномерное распределение
+    semester_map = balanced_distribution(obligatory, variative)
 
-    # 5. Метаданные от ИИ
+    # 6. Метаданные от ИИ
     enriched = {}
     for d in discs:
         enriched[d["name"]] = enrich_discipline_metadata(d, df_fgos, tf_struct)
 
-    # 6. Сборка строк
+    # 7. Сборка строк
     rows = []
 
     for sem, names in semester_map.items():
@@ -139,8 +146,7 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
                 "Обоснование": meta.get("reason", "")
             })
 
-
-    # 7. Практика + ГИА
+    # 8. Практика + ГИА
     rows.extend([
         {
             "Блок": "Блок 2. Практика",
