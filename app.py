@@ -452,23 +452,66 @@ def generate_disciplines_for_cluster(
             obligatory.append(d)
 
     return obligatory + variative
+def rebalance_blocks(all_discs):
+    """
+    Перераспределяет дисциплины по блокам:
+    - обязательных ≤ 20
+    - вариативных ≥ 20
+    """
+
+    obligatory = [d for d in all_discs if d["block_hint"] == "обязательная"]
+    variative = [d for d in all_discs if d["block_hint"] == "вариативная"]
+
+    # Если обязательных слишком много — переносим в вариативные
+    if len(obligatory) > 20:
+        extra = obligatory[20:]
+        for d in extra:
+            d["block_hint"] = "вариативная"
+        obligatory = obligatory[:20]
+        variative.extend(extra)
+
+    # Если вариативных слишком мало — добираем из обязательных
+    if len(variative) < 20:
+        need = 20 - len(variative)
+        candidates = [d for d in obligatory if not is_fundamental(d["name"])]
+        for d in candidates[:need]:
+            d["block_hint"] = "вариативная"
+            variative.append(d)
+            obligatory.remove(d)
+
+    return obligatory + variative
+
+
+def is_fundamental(name: str):
+    """
+    Определяет фундаментальные дисциплины.
+    """
+    name = name.lower()
+    keywords = [
+        "математ", "анализ", "основ", "введение",
+        "программирован", "алгоритм", "архитектур",
+        "сет", "инженер", "проект", "коммуникац"
+    ]
+    return any(k in name for k in keywords)
 
 
 
 def generate_universal_disciplines(df_fgos, tf_struct, match_json, profile_choice="Авто"):
     """
-    Этап 1: кластеризация → дисциплины → удаление дублей → догенерация.
+    Этап 1: кластеризация → дисциплины → удаление дублей → догенерация → ребалансировка блоков.
     """
+
     clusters = cluster_competencies_and_tf(df_fgos, tf_struct, profile_choice)
     if not clusters:
         return []
 
+    # 1. Генерация дисциплин по кластерам
     all_discs = []
     for cl in clusters:
         discs = generate_disciplines_for_cluster(cl, df_fgos, tf_struct, profile_choice)
         all_discs.extend(discs)
 
-    # Удаляем дубли
+    # 2. Удаляем дубли
     seen = set()
     unique = []
     for d in all_discs:
@@ -477,7 +520,7 @@ def generate_universal_disciplines(df_fgos, tf_struct, match_json, profile_choic
             seen.add(name)
             unique.append(d)
 
-    # Если мало — догенерируем
+    # 3. Догенерация, если мало
     if len(unique) < 40:
         prompt_more = f"""
 Ты ранее сгенерировал {len(unique)} дисциплин.
@@ -513,6 +556,9 @@ JSON:
             if name and name not in seen:
                 seen.add(name)
                 unique.append(d)
+
+    # 4. РЕБАЛАНСИРОВКА БЛОКОВ (вот здесь!)
+    unique = rebalance_blocks(unique)
 
     return unique
 
