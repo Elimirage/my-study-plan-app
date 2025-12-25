@@ -115,7 +115,16 @@ with tab4:
         # Показываем план, если он уже есть
         if "df_plan" in st.session_state:
             st.success("Учебный план готов")
-            st.dataframe(st.session_state.df_plan, use_container_width=True)
+            # Преобразуем списки компетенций в строки, чтобы PyArrow не падал
+            df = st.session_state.df_plan.copy()
+
+            if "Компетенции" in df.columns:
+                df["Компетенции"] = df["Компетенции"].apply(
+                    lambda x: ", ".join(x) if isinstance(x, list) else x
+                )
+
+            st.dataframe(df, use_container_width=True)
+
 
 
 with tab5:
