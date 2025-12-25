@@ -1,7 +1,7 @@
 import pandas as pd
 from disciplines import generate_disciplines
 from ai import enrich_discipline_metadata
-from competencies import detect_competencies
+from competencies import detect_competencies, PROFILE_MAP
 
 
 # ============================================================
@@ -9,10 +9,6 @@ from competencies import detect_competencies
 # ============================================================
 
 def remove_duplicates(discs):
-    """
-    Удаляет дубли дисциплин по названию.
-    Сохраняет первую встреченную дисциплину.
-    """
     seen = set()
     unique = []
     for d in discs:
@@ -28,19 +24,12 @@ def remove_duplicates(discs):
 # ============================================================
 
 def balanced_distribution(obligatory, variative):
-    """
-    Равномерное распределение дисциплин по семестрам.
-    Обязательные → 1–6
-    Вариативные → 3–7
-    """
     semester_plan = {s: [] for s in range(1, 8)}
 
-    # обязательные
     sems_obl = [1, 2, 3, 4, 5, 6]
     for i, disc in enumerate(obligatory):
         semester_plan[sems_obl[i % len(sems_obl)]].append(disc)
 
-    # вариативные
     sems_var = [3, 4, 5, 6, 7]
     for i, disc in enumerate(variative):
         semester_plan[sems_var[i % len(sems_var)]].append(disc)
@@ -99,7 +88,18 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
 
     # 1. Определяем профиль
     from fgos import detect_profile_from_fgos
-    profile = detect_profile_from_fgos(fgos_text)[0]
+    raw_profiles = detect_profile_from_fgos(fgos_text)
+    raw_text = " ".join(raw_profiles).lower()
+
+    # Нормализация профиля
+    profile = None
+    for key, val in PROFILE_MAP.items():
+        if key in raw_text:
+            profile = val
+            break
+
+    if profile is None:
+        profile = "ИВТ"  # разумный fallback
 
     # 2. Генерируем дисциплины
     discs = generate_disciplines(profile)
@@ -108,9 +108,12 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
     discs = remove_duplicates(discs)
 
     # 4. enrich метаданных (TF + обоснование)
-    enriched = {d["name"]: enrich_discipline_metadata(d, df_fgos, tf_struct) for d in discs}
+    enriched = {
+        d["name"]: enrich_discipline_metadata(d, df_fgos, tf_struct)
+        for d in discs
+    }
 
-    # 5. Разделяем по блокам (сохраняем объекты, а не только имена)
+    # 5. Разделяем по блокам
     obligatory = [d for d in discs if d["block_hint"] == "обязательная"]
     variative = [d for d in discs if d["block_hint"] == "вариативная"]
 
@@ -132,10 +135,9 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
                 "Часы": 144 if disc["block_hint"] == "обязательная" else 108,
                 "Форма контроля": assign_assessment(name),
 
-                # 🔥 Новая логика компетенций
+                # 🔥 Теперь компетенции берутся из правильной матрицы
                 "Компетенции ФГОС": detect_competencies(profile, name),
 
-                # TF и обоснование — из enrich
                 "Трудовые функции": ", ".join(meta.get("TF", [])),
                 "Обоснование": meta.get("reason", "")
             })
@@ -148,7 +150,7 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
             "Дисциплина": "Учебная практика",
             "Часы": 108,
             "Форма контроля": "зачёт",
-            "Компетенции ФГОС": "",
+            "Компетенции ФГОС": detect_competencies(profile, "Учебная практика"),
             "Трудовые функции": "",
             "Обоснование": "Практика по ФГОС"
         },
@@ -158,7 +160,7 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
             "Дисциплина": "Преддипломная практика",
             "Часы": 108,
             "Форма контроля": "зачёт",
-            "Компетенции ФГОС": "",
+            "Компетенции ФГОС": detect_competencies(profile, "Преддипломная практика"),
             "Трудовые функции": "",
             "Обоснование": "Преддипломная практика по ФГОС"
         },
@@ -168,7 +170,7 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
             "Дисциплина": "ВКР",
             "Часы": 216,
             "Форма контроля": "защита",
-            "Компетенции ФГОС": "",
+            "Компетенции ФГОС": detect_competencies(profile, "ВКР"),
             "Трудовые функции": "",
             "Обоснование": "Государственная итоговая аттестация"
         }
