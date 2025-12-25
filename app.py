@@ -865,6 +865,9 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, profile_choice, struc
         return pd.DataFrame()
 
     df = pd.DataFrame(plan_rows)
+    # Преобразуем списки в строки
+    df["Трудовые функции"] = df["Трудовые функции"].apply(lambda x: ", ".join(x) if isinstance(x, list) else x)
+    df["Компетенции ФГОС"] = df["Компетенции ФГОС"].apply(lambda x: ", ".join(x) if isinstance(x, list) else x)
 
     # Нормализация столбцов
     required_cols = [
