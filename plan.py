@@ -6,58 +6,48 @@ from ai import enrich_discipline_metadata
 # ============================
 # 1. Распределение по семестрам
 # ============================
-
 def distribute_semesters(obligatory, variative):
     """
-    Новое распределение дисциплин по семестрам.
-    Строгие лимиты, никаких переполнений.
+    Равномерное распределение дисциплин по семестрам.
+    Обязательные растягиваются по 1–6, вариативные — по 3–7.
     """
 
-    semester_plan = {
-        # обязательные
-        1: [],
-        2: [],
-        3: [],
-        4: [],
-        5: [],
-        6: [],
+    semester_plan = {s: [] for s in range(1, 8)}
 
-        # вариативные
-        7: []
-    }
+    max_per_sem_oblig = 4
+    max_per_sem_var = 4
 
-    # лимиты
-    limits = {
-        1: 4,
-        2: 4,
-        3: 4,
-        4: 4,
-        5: 2,
-        6: 2,
-        7: 4
-    }
-
-    # --- распределяем обязательные ---
     obligatory_semesters = [1, 2, 3, 4, 5, 6]
-    idx = 0
-
-    for sem in obligatory_semesters:
-        cap = limits[sem]
-        semester_plan[sem] = obligatory[idx:idx + cap]
-        idx += cap
-        if idx >= len(obligatory):
-            break
-
-    # --- распределяем вариативные ---
     variative_semesters = [3, 4, 5, 6, 7]
-    idx = 0
 
-    for sem in variative_semesters:
-        cap = limits[sem]
-        semester_plan[sem].extend(variative[idx:idx + cap])
-        idx += cap
-        if idx >= len(variative):
-            break
+    # --- обязательные: равномерно по 1–6 ---
+    sem_idx = 0
+    counters = {s: 0 for s in obligatory_semesters}
+
+    for disc in obligatory:
+        # крутимся по семестрам, пока не найдём тот, где есть место
+        for _ in range(len(obligatory_semesters)):
+            sem = obligatory_semesters[sem_idx]
+            if counters[sem] < max_per_sem_oblig:
+                semester_plan[sem].append(disc)
+                counters[sem] += 1
+                sem_idx = (sem_idx + 1) % len(obligatory_semesters)
+                break
+            sem_idx = (sem_idx + 1) % len(obligatory_semesters)
+
+    # --- вариативные: равномерно по 3–7 ---
+    sem_idx = 0
+    counters_var = {s: 0 for s in variative_semesters}
+
+    for disc in variative:
+        for _ in range(len(variative_semesters)):
+            sem = variative_semesters[sem_idx]
+            if counters_var[sem] < max_per_sem_var:
+                semester_plan[sem].append(disc)
+                counters_var[sem] += 1
+                sem_idx = (sem_idx + 1) % len(variative_semesters)
+                break
+            sem_idx = (sem_idx + 1) % len(variative_semesters)
 
     return semester_plan
 
@@ -136,16 +126,19 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
     for sem, names in semester_map.items():
         for name in names:
             meta = enriched.get(name, {})
+            is_oblig = name in obligatory
+
             rows.append({
-                "Блок": f"Блок 1. {'Обязательная' if name in obligatory else 'Вариативная'} часть",
+                "Блок": f"Блок 1. {'Обязательная' if is_oblig else 'Вариативная'} часть",
                 "Семестр": sem,
                 "Дисциплина": name,
-                "Часы": 144,
+                "Часы": 144 if is_oblig else 108,
                 "Форма контроля": assign_assessment(name),
                 "Компетенции ФГОС": ", ".join(meta.get("competencies", [])),
                 "Трудовые функции": ", ".join(meta.get("TF", [])),
                 "Обоснование": meta.get("reason", "")
             })
+
 
     # 7. Практика + ГИА
     rows.extend([
