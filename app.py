@@ -2,12 +2,11 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import json
+
 from fgos import extract_text_from_pdf_file, extract_competencies_full, detect_profile_from_fgos
 from profstandart import analyze_prof_standard, match_fgos_and_prof
 from plan import generate_plan_pipeline
 from utils import dataframe_to_excel_bytes
-
-
 
 
 st.set_page_config(
@@ -18,6 +17,20 @@ st.set_page_config(
 st.title("📘 Генератор учебного плана по ФГОС и профстандарту")
 
 
+# Универсальная функция нормализации
+def normalize_cell(x):
+    if isinstance(x, (list, tuple, set, np.ndarray)):
+        return ", ".join(map(str, x))
+    if isinstance(x, dict):
+        return json.dumps(x, ensure_ascii=False)
+    return x
+
+
+def normalize_df(df):
+    df = df.copy()
+    for col in df.columns:
+        df[col] = df[col].apply(normalize_cell)
+    return df
 
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -29,10 +42,8 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 
-
-
+# ---------------- TAB 1 ----------------
 with tab1:
-
     st.header("📄 Загрузка ФГОС")
 
     uploaded_fgos = st.file_uploader("Загрузите файл ФГОС (PDF)", type=["pdf"])
@@ -43,9 +54,9 @@ with tab1:
 
         st.session_state.df_fgos = df_fgos
         st.session_state.fgos_text = text_fgos
+
         st.subheader("Первые 500 символов текста ФГОС")
         st.text(text_fgos[:500])
-
 
         st.subheader("Извлечённые компетенции")
         st.dataframe(df_fgos, use_container_width=True)
@@ -56,8 +67,7 @@ with tab1:
         st.success(f"Определён профиль: {', '.join(profiles)}")
 
 
-
-
+# ---------------- TAB 2 ----------------
 with tab2:
     st.header("📄 Загрузка профстандарта")
 
@@ -74,7 +84,7 @@ with tab2:
             st.success(f"Найдено {len(tf_struct['TF'])} трудовых функций")
 
 
-
+# ---------------- TAB 3 ----------------
 with tab3:
     st.header("🔗 Сопоставление ФГОС и профстандарта")
 
@@ -92,7 +102,7 @@ with tab3:
         st.warning("Загрузите ФГОС и профстандарт")
 
 
-
+# ---------------- TAB 4 ----------------
 with tab4:
     st.header("📚 Генерация учебного плана")
 
@@ -103,7 +113,6 @@ with tab4:
     if not ready:
         st.warning("Не хватает данных для генерации плана")
     else:
-        # Кнопка генерации
         if st.button("🔄 Сгенерировать учебный план заново"):
             df_plan = generate_plan_pipeline(
                 st.session_state.df_fgos,
@@ -113,33 +122,14 @@ with tab4:
             )
             st.session_state.df_plan = df_plan
 
-        # Показываем план, если он уже есть
         if "df_plan" in st.session_state:
             st.success("Учебный план готов")
-            # Преобразуем списки компетенций в строки, чтобы PyArrow не падал
-            df = st.session_state.df_plan.copy()
 
-            
-
-            df = st.session_state.df_plan.copy()
-
-            def normalize_cell(x):
-                if isinstance(x, (list, tuple, set, np.ndarray)):
-                    return ", ".join(map(str, x))
-                if isinstance(x, dict):
-                    return json.dumps(x, ensure_ascii=False)
-                return x
-
-            for col in df.columns:
-                df[col] = df[col].apply(normalize_cell)
-
+            df = normalize_df(st.session_state.df_plan)
             st.dataframe(df, use_container_width=True)
 
 
-            st.dataframe(df, use_container_width=True)
-
-
-
+# ---------------- TAB 5 ----------------
 with tab5:
     st.header("📥 Экспорт учебного плана")
 
