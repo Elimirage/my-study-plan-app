@@ -6,9 +6,6 @@ import json
 from ai import call_yandex_lite
 
 
-# ============================
-# 1. Извлечение текста из PDF
-# ============================
 
 def extract_text_from_pdf_file(uploaded_file):
     """
@@ -42,10 +39,6 @@ def extract_text_from_pdf_file(uploaded_file):
     return ocr_text
 
 
-# ============================
-# 2. Извлечение компетенций ФГОС
-# ============================
-
 def extract_competencies_full(text):
     """
     Извлекает УК, ОПК, ПК из текста ФГОС.
@@ -63,9 +56,6 @@ def extract_competencies_full(text):
     return competencies
 
 
-# ============================
-# 3. Автоматическое определение профиля
-# ============================
 
 def detect_profile_from_fgos(text):
     """
@@ -93,6 +83,7 @@ def detect_profile_from_fgos(text):
         temperature=0.2,
         max_tokens=800
     )
+    print("RAW PROFILE RESPONSE >>>", raw)
 
     try:
         start = raw.index("{")

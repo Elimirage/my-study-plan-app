@@ -5,6 +5,7 @@ import streamlit as st
 YANDEX_API_KEY = st.secrets["YANDEX_API_KEY"]
 
 FOLDER_ID = "b1gduq5bjgu0km5qubgu"
+
 YANDEX_API_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 YANDEX_MODEL_LITE = "yandexgpt-lite"
 
