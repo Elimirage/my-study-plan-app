@@ -354,24 +354,12 @@ def cluster_competencies_and_tf(df_fgos, tf_struct, profile_choice="Авто"):
 def generate_disciplines_for_cluster(
     cluster, df_fgos, tf_struct, profile_choice="Авто",
     min_count=6, max_count=12
-    ):
-    """
-    Генерирует дисциплины для одного кластера.
-    ИИ отвечает только за названия и смысл,
-    а распределение по блокам контролирует Python.
-    """
-
+):
     cluster_name = cluster.get("name", "Тематический модуль")
     cluster_desc = cluster.get("description", "")
     comp_codes = cluster.get("competencies", [])
     tf_codes = cluster.get("TF", [])
 
-    # Подготовка контекста
-    fgos_filtered = df_fgos[df_fgos["code"].isin(comp_codes)]
-    tf_all = tf_struct.get("TF", [])
-    tf_filtered = [tf for tf in tf_all if tf.get("code") in tf_codes]
-
-    # --- PROMPT ---
     prompt = f"""
 Ты — методист вуза РФ.
 
@@ -387,9 +375,7 @@ def generate_disciplines_for_cluster(
 Важно:
 - НЕ распределяй дисциплины по блокам.
 - НЕ используй слова "обязательная" или "вариативная".
-- Просто дай список дисциплин, связанных с кластером.
-- Каждая дисциплина должна быть уникальной.
-- Названия должны быть профессиональными и реалистичными.
+- Просто дай список дисциплин.
 
 Верни строго JSON:
 {{
@@ -403,66 +389,40 @@ def generate_disciplines_for_cluster(
 }}
 """
 
-    # --- Вызов модели ---
     raw = call_yandex_lite(
         [{"role": "user", "text": prompt}],
         max_tokens=2000,
         temperature=0.3
     )
 
-    # --- Парсинг ---
     try:
         start = raw.index("{")
         end = raw.rindex("}") + 1
-        data = json.loads(raw[start:end])
-        discs = data.get("disciplines", [])
+        discs = json.loads(raw[start:end]).get("disciplines", [])
     except:
         return []
 
-    # --- Python распределяет блоки ---
-    # 30–40% обязательных, остальные вариативные
-    total = len(discs)
-    obligatory_target = max(1, int(total * 0.35))
-
+    # --- распределение блоков Python ---
     obligatory = []
     variative = []
-
-    # Ключевые слова для обязательных дисциплин
-    mandatory_keywords = [
-        "математ", "анализ", "основ", "введение", "информационн",
-        "программирован", "проект", "коммуникац", "базы данных",
-        "алгоритм", "архитектур", "сет", "инженер"
-    ]
 
     for d in discs:
         name = d.get("name", "").lower()
 
-        if any(k in name for k in mandatory_keywords) and len(obligatory) < obligatory_target:
+        if is_fundamental(name):
             d["block_hint"] = "обязательная"
             obligatory.append(d)
         else:
             d["block_hint"] = "вариативная"
             variative.append(d)
 
-    # Если обязательных слишком мало — добираем
-    if len(obligatory) < obligatory_target:
-        need = obligatory_target - len(obligatory)
-        for d in variative[:need]:
-            d["block_hint"] = "обязательная"
-            obligatory.append(d)
-
     return obligatory + variative
-def rebalance_blocks(all_discs):
-    """
-    Перераспределяет дисциплины по блокам:
-    - обязательных ≤ 20
-    - вариативных ≥ 20
-    """
 
+def rebalance_blocks(all_discs):
     obligatory = [d for d in all_discs if d["block_hint"] == "обязательная"]
     variative = [d for d in all_discs if d["block_hint"] == "вариативная"]
 
-    # Если обязательных слишком много — переносим в вариативные
+    # ограничение: обязательных ≤ 20
     if len(obligatory) > 20:
         extra = obligatory[20:]
         for d in extra:
@@ -470,7 +430,7 @@ def rebalance_blocks(all_discs):
         obligatory = obligatory[:20]
         variative.extend(extra)
 
-    # Если вариативных слишком мало — добираем из обязательных
+    # ограничение: вариативных ≥ 20
     if len(variative) < 20:
         need = 20 - len(variative)
         candidates = [d for d in obligatory if not is_fundamental(d["name"])]
@@ -480,15 +440,16 @@ def rebalance_blocks(all_discs):
             obligatory.remove(d)
 
     return obligatory + variative
+
 def is_fundamental(name: str):
     name = name.lower()
 
-    # Фундаментальные дисциплины — расширенный список
+    # 1. Фундаментальные признаки (приоритет)
     fundamental_keywords = [
         # математика и анализ
         "математ", "анализ", "статистик", "вероятност",
-        "исследование операций", "оптимизац", "теоретическая механика",
-        "механик", "моделирован", "расчёт", "расчет",
+        "исследование операций", "оптимизац", "механик",
+        "моделирован", "расчёт", "расчет",
 
         # программирование
         "программирован", "python", "алгоритм", "структуры данных",
@@ -501,32 +462,34 @@ def is_fundamental(name: str):
         "сет", "network", "базы данных", "sql", "nosql", "субд",
 
         # управление (техническое)
-        "автоматическ", "управление техническими системами",
-        "теория управления",
+        "автоматическ", "теория управления", "управление техническими системами",
 
-        # информационные технологии (базовые)
+        # базовые ИТ
         "информационные технологии", "it", "информационн систем",
     ]
 
-    # Прикладные дисциплины — всегда вариативные
+    # 2. Прикладные признаки (второстепенные)
     variative_keywords = [
-        "seo", "мультимедиа", "дизайн", "маркетинг", "коммуникац",
+        "seo", "мультимедиа", "дизайн", "маркетинг",
         "предприниматель", "бизнес", "социальные сети", "smm",
         "cms", "контент", "управление качеством", "управление рисками",
         "управление персоналом", "экология", "экономик", "медиаплан",
-        "когнитив", "конфликтолог", "vr", "ar", "виртуальной реальности",
-        "автомобиль", "интерфейс", "визуализац", "графическ",
-        "веб", "контент", "мультимедийный", "инфографик",
-        "стресс", "чтение", "письмо", "риторика", "ораторское",
-        "лидерство", "групповая динамика"
+        "когнитив", "конфликтолог", "vr", "ar",
+        "визуализац", "графическ", "инфографик",
+        "стресс", "чтение", "письмо", "риторика",
+        "лидерство", "групповая динамика",
     ]
 
-    # Если дисциплина явно прикладная — вариативная
+    # 3. Если есть фундаментальные признаки → ОБЯЗАТЕЛЬНАЯ
+    if any(k in name for k in fundamental_keywords):
+        return True
+
+    # 4. Если есть прикладные признаки → ВАРИАТИВНАЯ
     if any(k in name for k in variative_keywords):
         return False
 
-    # Если дисциплина содержит фундаментальные признаки — обязательная
-    return any(k in name for k in fundamental_keywords)
+    # 5. Всё остальное — вариативное
+    return False
 
 def generate_universal_disciplines(df_fgos, tf_struct, match_json, profile_choice="Авто"):
     """
@@ -639,7 +602,6 @@ def assign_hours_and_assessment(disciplines):
         return json.loads(raw[start:end]).get("disciplines", [])
     except:
         return disciplines
-
 
 def assign_blocks(disciplines):
     blocks = []
