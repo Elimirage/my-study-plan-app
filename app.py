@@ -7,10 +7,6 @@ from plan import generate_plan_pipeline
 from ai import completion_with_ai
 
 
-# ============================================================
-# Утилита: применение команды к DataFrame
-# ============================================================
-
 def apply_edit_command(df: pd.DataFrame, command: dict) -> tuple[pd.DataFrame, str]:
     """
     Применяет JSON-команду к DataFrame.
@@ -72,16 +68,8 @@ def apply_edit_command(df: pd.DataFrame, command: dict) -> tuple[pd.DataFrame, s
         return df, f"Неизвестное действие: {action}"
 
 
-# ============================================================
-# UI: две вкладки
-# ============================================================
-
 tab_plan, tab_chat = st.tabs(["📘 Учебный план", "💬 Чат с ИИ"])
 
-
-# ============================================================
-# 📘 Вкладка 1 — Генерация учебного плана
-# ============================================================
 
 with tab_plan:
     st.header("Генерация учебного плана")
@@ -101,7 +89,6 @@ with tab_plan:
 
         df = generate_plan_pipeline(df_fgos, tf_struct, {}, fgos_text)
 
-        # сохраняем в сессию, чтобы чат мог редактировать
         st.session_state.df = df
 
         st.subheader("Сформированный учебный план")
@@ -118,10 +105,6 @@ with tab_plan:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-
-# ============================================================
-# 💬 Вкладка 2 — Чат с ИИ (редактирование плана)
-# ============================================================
 
 with tab_chat:
     st.header("Чат для редактирования учебного плана")
@@ -146,7 +129,6 @@ with tab_chat:
             st.session_state.messages.append({"role": "user", "content": prompt})
 
             raw_reply = completion_with_ai(prompt)
-
 
             try:
                 command = json.loads(raw_reply)

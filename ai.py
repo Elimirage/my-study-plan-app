@@ -3,25 +3,17 @@ import json
 import pytesseract
 import streamlit as st
 
-# ============================
-# Настройки API
-# ============================
-
 YANDEX_API_KEY = st.secrets["YANDEX_API_KEY"]
 FOLDER_ID = "b1gduq5bjgu0km5qubgu"
 
-YANDEX_MODEL_LITE = "yandexgpt-lite"     # для enrich
-YANDEX_MODEL_CHAT = "yandexgpt"          # для чата через completion API
+YANDEX_MODEL_LITE = "yandexgpt-lite"
+YANDEX_MODEL_CHAT = "yandexgpt"
 
 YANDEX_COMPLETION_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
-# Путь к Tesseract (Windows)
 pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
 
 
-# ============================
-# ЧАТ (через completion API)
-# ============================
 def completion_with_ai(prompt: str) -> str:
     """
     Генерация JSON-команды редактирования таблицы через YandexGPT (completion API).
@@ -101,16 +93,14 @@ ADD:
         json=data
     )
 
-    raw = response.text  # сохраняем сырой ответ
+    raw = response.text
 
-    # Попытка распарсить JSON
     try:
         result = response.json()
         text = result["result"]["alternatives"][0]["message"]["text"]
     except:
         return f"Ошибка: модель вернула не JSON.\nСырой ответ:\n{raw}"
 
-    # Попытка найти JSON внутри текста
     try:
         start = text.index("{")
         end = text.rindex("}") + 1
@@ -119,10 +109,6 @@ ADD:
     except:
         return f"Не удалось извлечь JSON.\nОтвет модели:\n{text}"
 
-
-# ============================
-# Вызов YandexGPT Lite (для enrich)
-# ============================
 
 def call_yandex_lite(messages, temperature=0.3, max_tokens=1500):
     headers = {
@@ -159,10 +145,6 @@ def call_yandex_lite(messages, temperature=0.3, max_tokens=1500):
     except Exception:
         return f"Ошибка при разборе ответа YandexGPT: {result}"
 
-
-# ============================
-# Обогащение дисциплины
-# ============================
 
 def enrich_discipline_metadata(discipline, df_fgos, tf_struct):
     prompt = f"""

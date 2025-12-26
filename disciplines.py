@@ -1,11 +1,6 @@
 import json
 from ai import call_yandex_lite
 
-
-# ============================
-# 1. Фундаментальные области по профилям
-# ============================
-
 PROFILE_FUNDAMENTALS = {
     "Информационные технологии": [
         "математ", "алгоритм", "программирован", "базы данных",
@@ -37,24 +32,17 @@ PROFILE_FUNDAMENTALS = {
     ]
 }
 
-
-# ============================
-# 2. Определение фундаментальности дисциплины
-# ============================
-
 def is_fundamental(name: str, profile: str):
     """
     Определяет, является ли дисциплина фундаментальной для профиля.
     """
     name = name.lower()
 
-    # фундаментальные ключи по профилю
     keys = PROFILE_FUNDAMENTALS.get(profile, [])
 
     if any(k in name for k in keys):
         return True
 
-    # soft-skills → вариативные
     soft = [
         "культур", "истор", "философ", "психолог",
         "коммуник", "soft", "самоменедж", "управление временем",
@@ -63,13 +51,7 @@ def is_fundamental(name: str, profile: str):
     if any(k in name for k in soft):
         return False
 
-    # всё остальное → вариативное
     return False
-
-
-# ============================
-# 3. Генерация дисциплин под профиль
-# ============================
 
 def generate_disciplines(profile, min_fund=12, min_var=25):
     """
@@ -113,7 +95,6 @@ def generate_disciplines(profile, min_fund=12, min_var=25):
     fund = data.get("fundamental", [])
     var = data.get("variative", [])
 
-    # Проставляем block_hint
     for d in fund:
         d["block_hint"] = "обязательная"
     for d in var:

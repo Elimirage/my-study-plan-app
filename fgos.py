@@ -23,11 +23,9 @@ def extract_text_from_pdf_file(uploaded_file):
     except Exception:
         text = ""
 
-    # Если текст нормальный — возвращаем
     if len(text.strip()) > 50:
         return text
 
-    # Иначе — OCR
     ocr_text = ""
     try:
         images = convert_from_bytes(pdf_bytes)

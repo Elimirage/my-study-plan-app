@@ -2,17 +2,7 @@ import re
 import json
 from ai import call_yandex_lite
 
-
-# ============================
-# 1. Извлечение кодов ТФ
-# ============================
-
 def extract_tf_codes_smart(full_text):
-    """
-    Ищет коды ТФ в любом виде (сканы, таблицы, разрывы).
-    Примеры:
-    A/01.3, A 01.3, A-01-3, A01.3 и т.п.
-    """
     pattern = r"\b([A-D])\s*[/\-–—]?\s*(\d{2})\s*[\.\-–—,·]?\s*(\d)\b"
     matches = re.findall(pattern, full_text)
 
@@ -24,16 +14,7 @@ def extract_tf_codes_smart(full_text):
 
     return codes
 
-
-# ============================
-# 2. Поиск контекста ТФ
-# ============================
-
 def get_context_for_tf(full_text, tf_code, window=25):
-    """
-    Находит строку с нормализованным кодом ТФ (A/01.3),
-    учитывая, что в тексте он может быть написан по-разному.
-    """
     lines = full_text.split("\n")
 
     letter, nums = tf_code.split("/")
@@ -51,15 +32,7 @@ def get_context_for_tf(full_text, tf_code, window=25):
     end = min(len(lines), i + window)
     return "\n".join(lines[start:end])
 
-
-# ============================
-# 3. Анализ одной ТФ через ИИ
-# ============================
-
 def analyze_single_tf_with_ai(tf_code, context_text):
-    """
-    Отправляет фрагмент текста по одной ТФ в ИИ и извлекает структуру.
-    """
     prompt = f"""
 Ты — эксперт по профессиональным стандартам РФ.
 
@@ -105,15 +78,7 @@ def analyze_single_tf_with_ai(tf_code, context_text):
         "other": data.get("other", [])
     }
 
-
-# ============================
-# 4. Анализ всего профстандарта
-# ============================
-
 def analyze_prof_standard(full_text):
-    """
-    Извлекает все ТФ и анализирует каждую через ИИ.
-    """
     tf_codes = extract_tf_codes_smart(full_text)
     if not tf_codes:
         return None, "Не найдено ни одного кода ТФ."
@@ -125,16 +90,7 @@ def analyze_prof_standard(full_text):
 
     return {"TF": tf_list}, None
 
-
-# ============================
-# 5. Сопоставление ФГОС ↔ профстандарт
-# ============================
-
 def match_fgos_and_prof(df_fgos, tf_struct):
-    """
-    Устойчивое сопоставление ФГОС ↔ профстандарта на YandexGPT Lite.
-    """
-
     fgos_short = df_fgos.copy()
     fgos_short["description"] = fgos_short["description"].apply(lambda x: str(x)[:300])
 

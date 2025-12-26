@@ -2,10 +2,6 @@ import io
 import pandas as pd
 
 
-# ============================
-# Экспорт DataFrame → Excel
-# ============================
-
 def dataframe_to_excel_bytes(df: pd.DataFrame) -> bytes:
     """
     Преобразует DataFrame в Excel-файл (в байтах),

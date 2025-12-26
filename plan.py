@@ -4,10 +4,6 @@ from ai import enrich_discipline_metadata
 from competencies import detect_competencies, PROFILE_MAP
 
 
-# ============================================================
-# 0. Удаление дублей дисциплин
-# ============================================================
-
 def remove_duplicates(discs):
     seen = set()
     unique = []
@@ -18,10 +14,6 @@ def remove_duplicates(discs):
             unique.append(d)
     return unique
 
-
-# ============================================================
-# 1. Равномерное распределение по семестрам
-# ============================================================
 
 def balanced_distribution(obligatory, variative):
     semester_plan = {s: [] for s in range(1, 8)}
@@ -36,10 +28,6 @@ def balanced_distribution(obligatory, variative):
 
     return semester_plan
 
-
-# ============================================================
-# 2. Назначение формы контроля
-# ============================================================
 
 def assign_assessment(name):
     name = name.lower()
@@ -70,10 +58,6 @@ def assign_assessment(name):
     return "зачёт"
 
 
-# ============================================================
-# 3. Финальная сборка учебного плана
-# ============================================================
-
 def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
     """
     Полный пайплайн:
@@ -86,12 +70,10 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
     - добавление практик и ГИА
     """
 
-    # 1. Определяем профиль
     from fgos import detect_profile_from_fgos
     raw_profiles = detect_profile_from_fgos(fgos_text)
     raw_text = " ".join(raw_profiles).lower()
 
-    # Нормализация профиля
     profile = None
     for key, val in PROFILE_MAP.items():
         if key in raw_text:
@@ -99,28 +81,22 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
             break
 
     if profile is None:
-        profile = "ИВТ"  # разумный fallback
+        profile = "ИВТ"
 
-    # 2. Генерируем дисциплины
     discs = generate_disciplines(profile)
 
-    # 3. Удаляем дубли
     discs = remove_duplicates(discs)
 
-    # 4. enrich метаданных (TF + обоснование)
     enriched = {
         d["name"]: enrich_discipline_metadata(d, df_fgos, tf_struct)
         for d in discs
     }
 
-    # 5. Разделяем по блокам
     obligatory = [d for d in discs if d["block_hint"] == "обязательная"]
     variative = [d for d in discs if d["block_hint"] == "вариативная"]
 
-    # 6. Равномерное распределение
     semester_map = balanced_distribution(obligatory, variative)
 
-    # 7. Сборка строк
     rows = []
 
     for sem, disc_list in semester_map.items():
@@ -134,15 +110,11 @@ def generate_plan_pipeline(df_fgos, tf_struct, match_json, fgos_text):
                 "Дисциплина": name,
                 "Часы": 144 if disc["block_hint"] == "обязательная" else 108,
                 "Форма контроля": assign_assessment(name),
-
-                # 🔥 Теперь компетенции берутся из правильной матрицы
                 "Компетенции ФГОС": detect_competencies(profile, name),
-
                 "Трудовые функции": ", ".join(meta.get("TF", [])),
                 "Обоснование": meta.get("reason", "")
             })
 
-    # 8. Практика + ГИА
     rows.extend([
         {
             "Блок": "Блок 2. Практика",
