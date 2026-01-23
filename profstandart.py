@@ -3,16 +3,94 @@ import json
 from ai import call_yandex_lite
 
 def extract_tf_codes_smart(full_text):
-    pattern = r"\b([A-D])\s*[/\-–—]?\s*(\d{2})\s*[\.\-–—,·]?\s*(\d)\b"
-    matches = re.findall(pattern, full_text)
-
+    """
+    Извлекает коды трудовых функций из текста профстандарта.
+    Поддерживает различные форматы: A/01.1, A-01.1, A.01.1, A/01/1 и т.д.
+    """
     codes = []
-    for letter, num1, num2 in matches:
-        code = f"{letter}/{num1}.{num2}"
+    
+    pattern1 = r"\b([A-ZА-Я])\s*[/\-–—]\s*(\d{1,2})\s*[\.\-–—,·]\s*(\d{1,2})\b"
+    matches1 = re.findall(pattern1, full_text, re.IGNORECASE)
+    for letter, num1, num2 in matches1:
+        code = f"{letter.upper()}/{num1.zfill(2)}.{num2}"
         if code not in codes:
             codes.append(code)
-
+    
+    pattern2 = r"\b([A-ZА-Я])\s*[/\-–—]\s*(\d{1,2})\s*[/\-–—]\s*(\d{1,2})\b"
+    matches2 = re.findall(pattern2, full_text, re.IGNORECASE)
+    for letter, num1, num2 in matches2:
+        code = f"{letter.upper()}/{num1.zfill(2)}.{num2}"
+        if code not in codes:
+            codes.append(code)
+    
+    pattern3 = r"\b([A-ZА-Я])\s*\.\s*(\d{1,2})\s*\.\s*(\d{1,2})\b"
+    matches3 = re.findall(pattern3, full_text, re.IGNORECASE)
+    for letter, num1, num2 in matches3:
+        code = f"{letter.upper()}/{num1.zfill(2)}.{num2}"
+        if code not in codes:
+            codes.append(code)
+    
+    pattern4 = r"(?:трудовая\s+функция|тф|функция)\s+([A-ZА-Я])\s*[/\-–—]\s*(\d{1,2})\s*[\.\-–—,·]\s*(\d{1,2})\b"
+    matches4 = re.findall(pattern4, full_text, re.IGNORECASE)
+    for letter, num1, num2 in matches4:
+        code = f"{letter.upper()}/{num1.zfill(2)}.{num2}"
+        if code not in codes:
+            codes.append(code)
+    
+    if not codes:
+        codes = extract_tf_codes_with_ai(full_text)
+    
     return codes
+
+
+def extract_tf_codes_with_ai(full_text):
+    """
+    Альтернативный метод извлечения кодов через ИИ,
+    если регулярные выражения не нашли коды.
+    """
+    prompt = f"""
+Ты — эксперт по профессиональным стандартам РФ.
+
+В тексте профессионального стандарта найди все коды трудовых функций.
+Коды могут быть в форматах: A/01.1, A-01.1, A.01.1, A/01/1 и т.д.
+
+Верни строго JSON массив кодов:
+{{
+  "codes": ["A/01.1", "A/01.2", "B/02.1"]
+}}
+
+Если коды не найдены, верни пустой массив: {{"codes": []}}
+
+Текст профстандарта (первые 8000 символов):
+{full_text[:8000]}
+"""
+
+    try:
+        raw = call_yandex_lite(
+            [{"role": "user", "text": prompt}],
+            temperature=0.1,
+            max_tokens=500
+        )
+        
+        start = raw.index("{")
+        end = raw.rindex("}") + 1
+        data = json.loads(raw[start:end])
+        codes = data.get("codes", [])
+        
+        # Нормализуем коды к единому формату
+        normalized = []
+        for code in codes:
+            if isinstance(code, str):
+                # Приводим к формату A/01.1
+                code = code.upper().strip()
+                code = re.sub(r'[–—]', '/', code)  # Заменяем длинные тире
+                code = re.sub(r'\.+', '.', code)  # Убираем множественные точки
+                if code and '/' in code:
+                    normalized.append(code)
+        
+        return normalized
+    except Exception:
+        return []
 
 def get_context_for_tf(full_text, tf_code, window=25):
     lines = full_text.split("\n")
@@ -71,17 +149,27 @@ def analyze_single_tf_with_ai(tf_code, context_text):
 
     return {
         "code": tf_code,
-        "name": data.get("name", ""),
-        "actions": data.get("actions", []),
-        "knowledge": data.get("knowledge", []),
-        "skills": data.get("skills", []),
-        "other": data.get("other", [])
+        "name": data.get("name") or "",
+        "actions": data.get("actions") or [],
+        "knowledge": data.get("knowledge") or [],
+        "skills": data.get("skills") or [],
+        "other": data.get("other") or []
     }
 
 def analyze_prof_standard(full_text):
+    """
+    Анализирует профстандарт и извлекает трудовые функции.
+    """
+    if not full_text or len(full_text.strip()) < 50:
+        return None, "Текст профстандарта слишком короткий или пустой."
+    
     tf_codes = extract_tf_codes_smart(full_text)
     if not tf_codes:
-        return None, "Не найдено ни одного кода ТФ."
+        # Пробуем еще раз с более широким поиском
+        # Ищем любые упоминания "трудовая функция" или "ТФ"
+        if "трудовая функция" in full_text.lower() or "тф" in full_text.lower():
+            return None, "Найдены упоминания трудовых функций, но не удалось извлечь коды. Возможно, используется нестандартный формат."
+        return None, "Не найдено ни одного кода трудовых функций. Убедитесь, что файл содержит профессиональный стандарт с кодами ТФ (например, A/01.1, B/02.3)."
 
     tf_list = []
     for code in tf_codes:
