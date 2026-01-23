@@ -236,7 +236,10 @@ with tab_chat:
 
             if prompt:
                 st.session_state.consultation_messages.append({"role": "user", "content": prompt})
-                response = consult_with_methodologist(prompt, plan_context)
+                try:
+                    response = consult_with_methodologist(prompt, plan_context)
+                except Exception as e:
+                    response = f"Ошибка при обращении к методисту: {str(e)}"
                 st.session_state.consultation_messages.append({"role": "assistant", "content": response})
                 st.rerun()
 

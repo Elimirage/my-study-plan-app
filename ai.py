@@ -81,7 +81,7 @@ def consult_with_methodologist(prompt: str, plan_context: dict = None) -> str:
     messages.append({"role": "user", "text": prompt})
 
     data = {
-        "modelUri": f"gpt://{FOLDER_ID}/{YANDEX_MODEL_CHAT}",
+        "modelUri": f"gpt://{FOLDER_ID}/yandexgpt",  
         "completionOptions": {
             "stream": False,
             "temperature": 0.7,
