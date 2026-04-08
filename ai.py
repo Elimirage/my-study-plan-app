@@ -1,9 +1,9 @@
+import os
 import requests
 import json
 import pytesseract
 import streamlit as st
 
-YANDEX_API_KEY = st.secrets["YANDEX_API_KEY"]
 FOLDER_ID = "b1gduq5bjgu0km5qubgu"
 
 YANDEX_MODEL_LITE = "yandexgpt-lite"
@@ -11,15 +11,57 @@ YANDEX_MODEL_CHAT = "yandexgpt"
 
 YANDEX_COMPLETION_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+
+def get_yandex_api_key() -> str:
+    try:
+        return st.secrets["YANDEX_API_KEY"]
+    except Exception as e:
+        raise RuntimeError(
+            "Не найден YANDEX_API_KEY. Добавь ключ в .streamlit/secrets.toml"
+        ) from e
 
 
-def consult_with_methodologist(prompt: str, plan_context: dict = None) -> str:
-    headers = {
-        "Authorization": f"Api-Key {YANDEX_API_KEY}",
+def get_yandex_headers() -> dict:
+    return {
+        "Authorization": f"Api-Key {get_yandex_api_key()}",
         "Content-Type": "application/json"
     }
 
+
+def post_to_yandex(messages, model_name: str, temperature: float, max_tokens: int) -> dict:
+    data = {
+        "modelUri": f"gpt://{FOLDER_ID}/{model_name}",
+        "completionOptions": {
+            "stream": False,
+            "temperature": temperature,
+            "maxTokens": max_tokens
+        },
+        "messages": messages
+    }
+
+    try:
+        response = requests.post(
+            YANDEX_COMPLETION_URL,
+            headers=get_yandex_headers(),
+            json=data,
+            timeout=60
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.HTTPError as e:
+        raise RuntimeError(f"HTTP-ошибка YandexGPT: {e}") from e
+    except requests.RequestException as e:
+        raise RuntimeError(f"Ошибка сети при обращении к YandexGPT: {e}") from e
+    except ValueError as e:
+        raise RuntimeError("YandexGPT вернул некорректный JSON.") from e
+
+
+tesseract_path = os.getenv("TESSERACT_CMD")
+if tesseract_path:
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
+
+
+def consult_with_methodologist(prompt: str, plan_context: dict = None) -> str:
     context_info = ""
     if plan_context:
         disciplines_count = plan_context.get("disciplines_count", 0)
@@ -37,7 +79,7 @@ def consult_with_methodologist(prompt: str, plan_context: dict = None) -> str:
 
         disciplines_list = plan_context.get("disciplines_list", [])
         if disciplines_list:
-            context_info += f"\nДисциплины в плане:\n"
+            context_info += "\nДисциплины в плане:\n"
             for i, disc in enumerate(disciplines_list[:30], 1):
                 context_info += f"{i}. {disc}\n"
 
@@ -57,7 +99,7 @@ def consult_with_methodologist(prompt: str, plan_context: dict = None) -> str:
 - Профессиональный, но дружелюбный
 - Конкретный и по делу
 - С примерами и рекомендациями
-- Структурированные ответы (списки, выделения)
+- Структурированные ответы
 
 ОТВЕЧАЙ:
 - На русском языке
@@ -71,43 +113,31 @@ def consult_with_methodologist(prompt: str, plan_context: dict = None) -> str:
 - Укажи, в каком режиме это лучше сделать (редактирование)
 """
 
-    messages = [
-        {"role": "system", "text": system_prompt}
-    ]
+    messages = [{"role": "system", "text": system_prompt}]
 
     if plan_context and plan_context.get("chat_history"):
-        messages.extend(plan_context["chat_history"][-5:])
+        history = []
+        for msg in plan_context["chat_history"][-5:]:
+            role = msg.get("role")
+            content = msg.get("content")
+            if role and content:
+                history.append({"role": role, "text": content})
+        messages.extend(history)
 
     messages.append({"role": "user", "text": prompt})
 
-    data = {
-        "modelUri": f"gpt://{FOLDER_ID}/yandexgpt",  
-        "completionOptions": {
-            "stream": False,
-            "temperature": 0.7,
-            "maxTokens": 2000
-        },
-        "messages": messages
-    }
-
     try:
-        response = requests.post(
-            YANDEX_COMPLETION_URL,
-            headers=headers,
-            json=data
+        result = post_to_yandex(
+            messages=messages,
+            model_name=YANDEX_MODEL_CHAT,
+            temperature=0.7,
+            max_tokens=2000
         )
-        result = response.json()
         return result["result"]["alternatives"][0]["message"]["text"]
     except Exception as e:
-        return f"Извините, произошла ошибка при обращении к методисту: {str(e)}"
-
+        return f"Извините, произошла ошибка при обращении к методисту: {e}"
 
 def completion_with_ai(prompt: str) -> str:
-    headers = {
-        "Authorization": f"Api-Key {YANDEX_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
     system_prompt = """
 Ты — ИИ, который ДОЛЖЕН возвращать строго JSON.
 
@@ -157,67 +187,38 @@ ADD:
 }
 """
 
-    data = {
-        "modelUri": f"gpt://{FOLDER_ID}/{YANDEX_MODEL_CHAT}",
-        "completionOptions": {
-            "stream": False,
-            "temperature": 0.1,
-            "maxTokens": 500
-        },
-        "messages": [
-            {"role": "system", "text": system_prompt},
-            {"role": "user", "text": prompt}
-        ]
-    }
-
-    response = requests.post(
-        YANDEX_COMPLETION_URL,
-        headers=headers,
-        json=data
-    )
-
-    raw = response.text
+    messages = [
+        {"role": "system", "text": system_prompt},
+        {"role": "user", "text": prompt}
+    ]
 
     try:
-        result = response.json()
+        result = post_to_yandex(
+            messages=messages,
+            model_name=YANDEX_MODEL_CHAT,
+            temperature=0.1,
+            max_tokens=500
+        )
         text = result["result"]["alternatives"][0]["message"]["text"]
-    except:
-        return f"Ошибка: модель вернула не JSON.\nСырой ответ:\n{raw}"
+    except Exception as e:
+        return f"Ошибка обращения к модели: {e}"
 
     try:
         start = text.index("{")
         end = text.rindex("}") + 1
         return text[start:end]
-    except:
+    except ValueError:
         return f"Не удалось извлечь JSON.\nОтвет модели:\n{text}"
-
-
 def call_yandex_lite(messages, temperature=0.3, max_tokens=1500):
-    headers = {
-        "Authorization": f"Api-Key {YANDEX_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    data = {
-        "modelUri": f"gpt://{FOLDER_ID}/{YANDEX_MODEL_LITE}",
-        "completionOptions": {
-            "stream": False,
-            "temperature": temperature,
-            "maxTokens": max_tokens
-        },
-        "messages": messages
-    }
-
-    response = requests.post(
-        YANDEX_COMPLETION_URL,
-        headers=headers,
-        json=data
-    )
-
     try:
-        result = response.json()
-    except Exception:
-        return "Ошибка: не удалось декодировать ответ YandexGPT как JSON."
+        result = post_to_yandex(
+            messages=messages,
+            model_name=YANDEX_MODEL_LITE,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+    except Exception as e:
+        return f"Ошибка при обращении к YandexGPT: {e}"
 
     if "error" in result:
         return f"Ошибка сервиса YandexGPT: {result.get('error')}"
@@ -226,7 +227,6 @@ def call_yandex_lite(messages, temperature=0.3, max_tokens=1500):
         return result["result"]["alternatives"][0]["message"]["text"]
     except Exception:
         return f"Ошибка при разборе ответа YandexGPT: {result}"
-
 
 def enrich_discipline_metadata(discipline, df_fgos, tf_struct, profile="", fgos_text=""):
     import pandas as pd
