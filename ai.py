@@ -4,7 +4,7 @@ import json
 import pytesseract
 import streamlit as st
 
-FOLDER_ID = "b1gduq5bjgu0km5qubgu"
+FOLDER_ID = "aje1eg4679d4a70efre8"
 
 YANDEX_MODEL_LITE = "yandexgpt-lite"
 YANDEX_MODEL_CHAT = "yandexgpt"
