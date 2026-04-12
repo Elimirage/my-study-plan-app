@@ -34,27 +34,24 @@ def post_to_yandex(messages, model_name: str, temperature: float, max_tokens: in
         "completionOptions": {
             "stream": False,
             "temperature": temperature,
-            "maxTokens": max_tokens
+            "maxTokens": str(max_tokens)
         },
         "messages": messages
     }
 
-    try:
-        response = requests.post(
-            YANDEX_COMPLETION_URL,
-            headers=get_yandex_headers(),
-            json=data,
-            timeout=60
-        )
-        response.raise_for_status()
-        return response.json()
-    except requests.HTTPError as e:
-        raise RuntimeError(f"HTTP-ошибка YandexGPT: {e}") from e
-    except requests.RequestException as e:
-        raise RuntimeError(f"Ошибка сети при обращении к YandexGPT: {e}") from e
-    except ValueError as e:
-        raise RuntimeError("YandexGPT вернул некорректный JSON.") from e
+    response = requests.post(
+        YANDEX_COMPLETION_URL,
+        headers=get_yandex_headers(),
+        json=data,
+        timeout=60
+    )
 
+    if not response.ok:
+        raise RuntimeError(
+            f"Yandex API вернул {response.status_code}: {response.text}"
+        )
+
+    return response.json()
 
 tesseract_path = os.getenv("TESSERACT_CMD")
 if tesseract_path:
@@ -210,24 +207,14 @@ ADD:
     except ValueError:
         return f"Не удалось извлечь JSON.\nОтвет модели:\n{text}"
 def call_yandex_lite(messages, temperature=0.3, max_tokens=1500):
-    try:
-        result = post_to_yandex(
-            messages=messages,
-            model_name=YANDEX_MODEL_LITE,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
-    except Exception as e:
-        return f"Ошибка при обращении к YandexGPT: {e}"
+    result = post_to_yandex(
+        messages=messages,
+        model_name=YANDEX_MODEL_LITE,
+        temperature=temperature,
+        max_tokens=max_tokens
+    )
 
-    if "error" in result:
-        return f"Ошибка сервиса YandexGPT: {result.get('error')}"
-
-    try:
-        return result["result"]["alternatives"][0]["message"]["text"]
-    except Exception:
-        return f"Ошибка при разборе ответа YandexGPT: {result}"
-
+    return result["result"]["alternatives"][0]["message"]["text"]
 def enrich_discipline_metadata(discipline, df_fgos, tf_struct, profile="", fgos_text=""):
     import pandas as pd
 

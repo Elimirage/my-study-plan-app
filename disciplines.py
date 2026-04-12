@@ -134,7 +134,7 @@ def generate_disciplines(profile, df_fgos=None, tf_struct=None, fgos_text="", mi
         end = raw.rindex("}") + 1
         data = json.loads(raw[start:end])
     except Exception as e:
-        return []
+        raise RuntimeError(f"Ошибка генерации дисциплин: {e}") from e
 
     fund = data.get("fundamental", [])
     var = data.get("variative", [])
