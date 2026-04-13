@@ -11,6 +11,137 @@ from profstandart import analyze_prof_standard
 
 import streamlit as st
 
+DIRECTION_MAP = {
+    "09.03.01": {
+        "name": "Информатика и вычислительная техника",
+        "qualification": "бакалавр",
+        "profiles": [
+            "Программное обеспечение средств вычислительной техники и автоматизированных систем",
+            "Искусственный интеллект и анализ данных",
+            "Вычислительные машины, комплексы, системы и сети",
+            "Разработка программных систем",
+        ],
+        "faculties": [
+            "Факультет вычислительной техники",
+            "Факультет информационных технологий",
+            "Институт цифровых технологий",
+        ],
+    },
+    "09.04.01": {
+        "name": "Информатика и вычислительная техника",
+        "qualification": "магистр",
+        "profiles": [
+            "Прикладной искусственный интеллект",
+            "Интеллектуальные системы",
+            "Анализ больших данных",
+            "Инженерия программного обеспечения",
+        ],
+        "faculties": [
+            "Факультет вычислительной техники",
+            "Факультет информационных технологий",
+            "Институт цифровых технологий",
+        ],
+    },
+    "40.03.01": {
+        "name": "Юриспруденция",
+        "qualification": "бакалавр",
+        "profiles": [
+            "Гражданско-правовой",
+            "Уголовно-правовой",
+            "Государственно-правовой",
+        ],
+        "faculties": [
+            "Юридический факультет",
+            "Институт права",
+        ],
+    },
+    "40.04.01": {
+        "name": "Юриспруденция",
+        "qualification": "магистр",
+        "profiles": [
+            "Правоприменение",
+            "Судебная деятельность",
+            "Юрист в сфере цифровой экономики",
+        ],
+        "faculties": [
+            "Юридический факультет",
+            "Институт права",
+        ],
+    },
+    "44.03.01": {
+        "name": "Педагогическое образование",
+        "qualification": "бакалавр",
+        "profiles": [
+            "Информатика",
+            "Математика",
+            "Начальное образование",
+            "Русский язык",
+        ],
+        "faculties": [
+            "Педагогический факультет",
+            "Институт педагогики",
+        ],
+    },
+    "44.04.01": {
+        "name": "Педагогическое образование",
+        "qualification": "магистр",
+        "profiles": [
+            "Цифровая педагогика",
+            "Современные образовательные технологии",
+            "Управление в образовании",
+        ],
+        "faculties": [
+            "Педагогический факультет",
+            "Институт педагогики",
+        ],
+    },
+}
+
+
+UNIVERSITY_OPTIONS = [
+    "Пензенский государственный университет",
+    "Московский государственный университет",
+    "Санкт-Петербургский государственный университет",
+    "Казанский федеральный университет",
+    "Уральский федеральный университет",
+    "Ваш университет",
+]
+
+
+def select_or_custom(label: str, options: list[str], default: str = "", key: str = "") -> str:
+    clean_options = []
+    seen = set()
+
+    if default and default not in options:
+        options = [default] + options
+
+    for item in options:
+        value = str(item).strip()
+        if value and value not in seen:
+            clean_options.append(value)
+            seen.add(value)
+
+    full_options = ["Свой вариант"] + clean_options
+
+    default_index = 0
+    if default and default in full_options:
+        default_index = full_options.index(default)
+
+    selected = st.selectbox(
+        label,
+        full_options,
+        index=default_index,
+        key=f"{key}_select"
+    )
+
+    if selected == "Свой вариант":
+        return st.text_input(
+            f"{label} — свой вариант",
+            value=default,
+            key=f"{key}_custom"
+        ).strip()
+
+    return selected 
 
 def select_or_custom(label: str, options: list[str], default: str = "") -> str:
     """
@@ -363,99 +494,104 @@ with tab_rpd:
         if "Дисциплина" not in df.columns:
             st.error("В учебном плане нет колонки 'Дисциплина'.")
         else:
-            disciplines = df["Дисциплина"].dropna().tolist()
+            disciplines = df["Дисциплина"].dropna().astype(str).tolist()
 
-            selected = st.selectbox(
+            selected_discipline = st.selectbox(
                 "Выберите дисциплину",
                 disciplines,
                 key="selected_rpd_discipline"
             )
 
-            profile = "не определен"
+            default_direction_code = "09.03.01"
+
             detected_profiles = st.session_state.get("detected_profiles", [])
-            if detected_profiles:
-                profile = detected_profiles[0]
+            detected_profile = detected_profiles[0] if detected_profiles else ""
 
             direction_code = select_or_custom(
                 "Код направления",
-                [
-                    "09.03.01",
-                    "09.04.01",
-                    "40.03.01",
-                    "40.04.01",
-                    "44.03.01",
-                    "44.04.01",
-                    "38.03.01",
-                    "38.04.01",
-                    "37.03.01",
-                    "54.03.01",
-                ],
-                default="09.03.01"
+                list(DIRECTION_MAP.keys()),
+                default=default_direction_code,
+                key="direction_code"
             )
 
-            direction_name = select_or_custom(
+            direction_info = DIRECTION_MAP.get(direction_code, {
+                "name": "",
+                "qualification": "",
+                "profiles": [],
+                "faculties": [],
+            })
+
+            auto_direction_name = direction_info.get("name", "")
+            auto_qualification = direction_info.get("qualification", "")
+            auto_profiles = direction_info.get("profiles", [])
+            auto_faculties = direction_info.get("faculties", [])
+
+            st.text_input(
                 "Направление подготовки",
-                [
-                    "Информатика и вычислительная техника",
-                    "Прикладная информатика",
-                    "Информационные системы и технологии",
-                    "Юриспруденция",
-                    "Педагогическое образование",
-                    "Экономика",
-                    "Менеджмент",
-                    "Психология",
-                    "Дизайн",
-                ],
-                default="Информатика и вычислительная техника"
+                value=auto_direction_name,
+                disabled=True,
+                key="direction_name_locked"
             )
 
-            qualification = select_or_custom(
+            st.text_input(
                 "Квалификация",
-                [
-                    "бакалавр",
-                    "магистр",
-                    "специалист",
-                ],
-                default="бакалавр"
+                value=auto_qualification,
+                disabled=True,
+                key="qualification_locked"
+            )
+
+            profile_default = detected_profile if detected_profile else (auto_profiles[0] if auto_profiles else "")
+
+            profile = select_or_custom(
+                "Профиль подготовки",
+                auto_profiles,
+                default=profile_default,
+                key="profile"
             )
 
             education_form = select_or_custom(
                 "Форма обучения",
-                [
-                    "очная",
-                    "очно-заочная",
-                    "заочная",
-                ],
-                default="очная"
+                ["очная", "очно-заочная", "заочная"],
+                default="очная",
+                key="education_form"
             )
 
             university_name = select_or_custom(
                 "Университет",
-                [
-                    "Ваш университет",
-                    "Пензенский государственный университет",
-                    "Московский государственный университет",
-                    "Санкт-Петербургский государственный университет",
-                    "Казанский федеральный университет",
-                    "Уральский федеральный университет",
-                ],
-                default="Ваш университет"
+                UNIVERSITY_OPTIONS,
+                default="Пензенский государственный университет",
+                key="university_name"
             )
+
+            faculty_default = auto_faculties[0] if auto_faculties else "Ваш факультет"
 
             faculty_name = select_or_custom(
                 "Факультет",
-                [
-                    "Ваш факультет",
+                auto_faculties + [
                     "Факультет вычислительной техники",
-                    "Юридический факультет",
-                    "Экономический факультет",
-                    "Педагогический факультет",
                     "Факультет информационных технологий",
+                    "Юридический факультет",
+                    "Педагогический факультет",
+                    "Экономический факультет",
+                    "Ваш факультет",
                 ],
-                default="Ваш факультет"
+                default=faculty_default,
+                key="faculty_name"
             )
 
-            row = df[df["Дисциплина"] == selected].iloc[0].to_dict()
+            row = df[df["Дисциплина"].astype(str) == selected_discipline].iloc[0].to_dict()
+
+            with st.expander("Параметры для генерации", expanded=False):
+                st.write({
+                    "discipline": selected_discipline,
+                    "direction_code": direction_code,
+                    "direction_name": auto_direction_name,
+                    "qualification": auto_qualification,
+                    "profile": profile,
+                    "education_form": education_form,
+                    "university_name": university_name,
+                    "faculty_name": faculty_name,
+                })
 
             if st.button("Сгенерировать рабочую программу DOCX", type="primary", use_container_width=True):
                 try:
@@ -464,17 +600,19 @@ with tab_rpd:
                             discipline_row=row,
                             profile=profile,
                             direction_code=direction_code,
-                            direction_name=direction_name,
-                            qualification=qualification,
+                            direction_name=auto_direction_name,
+                            qualification=auto_qualification,
                             education_form=education_form,
                             university_name=university_name,
                             faculty_name=faculty_name,
                         )
+
                         docx_bytes = create_work_program_docx(content)
 
                     st.success("Рабочая программа сформирована.")
 
-                    filename = f"Рабочая_программа_{selected.replace(' ', '_')}.docx"
+                    filename = f"Рабочая_программа_{selected_discipline.replace(' ', '_')}.docx"
+
                     st.download_button(
                         label="📥 Скачать DOCX",
                         data=docx_bytes,
@@ -483,7 +621,7 @@ with tab_rpd:
                         use_container_width=True,
                     )
 
-                    with st.expander("Предпросмотр структуры"):
+                    with st.expander("Предпросмотр структуры", expanded=False):
                         st.json(content)
 
                 except Exception as e:
