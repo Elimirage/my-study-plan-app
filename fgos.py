@@ -54,43 +54,43 @@ def extract_competencies_full(text):
     return competencies
 
 
+def detect_profile_from_fgos(fgos_text: str):
+    from ai import call_yandex_lite
+    import json
 
-def detect_profile_from_fgos(text):
-    """
-    Автоматическое определение профиля подготовки по тексту ФГОС.
-    Возвращает список 1–3 наиболее вероятных профилей.
-    """
+    raw_profiles = ""
 
     prompt = f"""
-Ты — эксперт по образовательным стандартам РФ.
-
-На входе — текст ФГОС. 
-Определи 1–3 наиболее вероятных профиля подготовки.
+Ты — методист вуза.
+Определи профиль подготовки по тексту ФГОС.
 
 Верни строго JSON:
 {{
-  "profiles": ["Профиль1", "Профиль2"]
+  "profiles": ["Информатика и вычислительная техника"]
 }}
 
 Текст ФГОС:
-{text[:12000]}
+{fgos_text[:12000]}
 """
 
-    raw = call_yandex_lite(
-        [{"role": "user", "text": prompt}],
-        temperature=0.2,
-        max_tokens=800
-    )
-    print("RAW PROFILE RESPONSE >>>", raw)
-
     try:
-        start = raw.index("{")
-        end = raw.rindex("}") + 1
-        data = json.loads(raw[start:end])
-        profiles = data.get("profiles", [])
-        if isinstance(profiles, list) and profiles:
-            return profiles
-    except:
-        pass
+        raw_profiles = call_yandex_lite(
+            [{"role": "user", "text": prompt}],
+            temperature=0.1,
+            max_tokens=500
+        )
 
-    return ["Не удалось определить профиль"]
+        start = raw_profiles.index("{")
+        end = raw_profiles.rindex("}") + 1
+        data = json.loads(raw_profiles[start:end])
+
+        profiles = data.get("profiles", [])
+        if isinstance(profiles, list):
+            return [str(p).strip() for p in profiles if str(p).strip()]
+
+        return []
+
+    except Exception as e:
+        raise RuntimeError(
+            f"Ошибка определения профиля: {e}. Ответ модели: {raw_profiles}"
+        ) from e
