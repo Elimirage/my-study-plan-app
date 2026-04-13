@@ -58,18 +58,17 @@ def detect_profile_from_fgos(fgos_text: str):
     from ai import call_yandex_lite
     import json
 
-    raw_profiles = ""
+    raw_profiles = ""  # ← ВАЖНО
 
     prompt = f"""
-Ты — методист вуза.
-Определи профиль подготовки по тексту ФГОС.
+Определи профиль подготовки по ФГОС.
 
-Верни строго JSON:
+Верни JSON:
 {{
-  "profiles": ["Информатика и вычислительная техника"]
+  "profiles": ["Юриспруденция"]
 }}
 
-Текст ФГОС:
+Текст:
 {fgos_text[:12000]}
 """
 
@@ -84,13 +83,7 @@ def detect_profile_from_fgos(fgos_text: str):
         end = raw_profiles.rindex("}") + 1
         data = json.loads(raw_profiles[start:end])
 
-        profiles = data.get("profiles", [])
-        if isinstance(profiles, list):
-            return [str(p).strip() for p in profiles if str(p).strip()]
-
-        return []
+        return data.get("profiles", [])
 
     except Exception as e:
-        raise RuntimeError(
-            f"Ошибка определения профиля: {e}. Ответ модели: {raw_profiles}"
-        ) from e
+        return []  # ← не падаем вообще

@@ -185,7 +185,7 @@ with tab_plan:
             except Exception as e:
                 st.session_state.tf_struct = {"TF": []}
                 st.session_state.prof_text = ""
-                st.error(f"Ошибка при обработке профстандарта: {e}")
+                st.warning(f"Профстандарт не обработан: {e}")
 
     # Генерация плана теперь возможна и без профстандарта
     fgos_ready = not st.session_state.get("df_fgos", pd.DataFrame()).empty
