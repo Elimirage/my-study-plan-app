@@ -66,8 +66,11 @@ def apply_edit_command(df: pd.DataFrame, command: dict) -> tuple[pd.DataFrame, s
         return df, f"Неизвестное действие: {action}"
 
 
-tab_plan, tab_chat = st.tabs(["📘 Учебный план", "💬 Чат с ИИ"])
-
+tab_plan, tab_chat, tab_rpd = st.tabs([
+    "📘 Учебный план",
+    "💬 Чат с ИИ",
+    "📄 Рабочие программы"
+])
 
 with tab_plan:
     st.header("Генерация учебного плана")
@@ -306,3 +309,69 @@ with tab_chat:
 
         st.subheader("📊 Обновлённый учебный план")
         st.dataframe(st.session_state.df, use_container_width=True)
+with tab_rpd:
+    st.header("📄 Рабочие программы дисциплин")
+
+    if "df" not in st.session_state or st.session_state.df.empty:
+        st.info("Сначала сгенерируйте учебный план.")
+    else:
+        from work_program import generate_work_program_content, create_work_program_docx
+
+        df = st.session_state.df.copy()
+
+        if "Дисциплина" not in df.columns:
+            st.error("В учебном плане нет колонки 'Дисциплина'.")
+        else:
+            disciplines = df["Дисциплина"].dropna().tolist()
+
+            selected = st.selectbox(
+                "Выберите дисциплину",
+                disciplines,
+                key="selected_rpd_discipline"
+            )
+
+            profile = "не определен"
+            detected_profiles = st.session_state.get("detected_profiles", [])
+            if detected_profiles:
+                profile = detected_profiles[0]
+
+            direction_code = st.text_input("Код направления", value="09.03.01")
+            direction_name = st.text_input("Направление подготовки", value="Информатика и вычислительная техника")
+            qualification = st.text_input("Квалификация", value="бакалавр")
+            education_form = st.text_input("Форма обучения", value="очная")
+            university_name = st.text_input("Университет", value="Ваш университет")
+            faculty_name = st.text_input("Факультет", value="Ваш факультет")
+
+            row = df[df["Дисциплина"] == selected].iloc[0].to_dict()
+
+            if st.button("Сгенерировать рабочую программу DOCX", type="primary", use_container_width=True):
+                try:
+                    with st.spinner("Генерация рабочей программы..."):
+                        content = generate_work_program_content(
+                            discipline_row=row,
+                            profile=profile,
+                            direction_code=direction_code,
+                            direction_name=direction_name,
+                            qualification=qualification,
+                            education_form=education_form,
+                            university_name=university_name,
+                            faculty_name=faculty_name,
+                        )
+                        docx_bytes = create_work_program_docx(content)
+
+                    st.success("Рабочая программа сформирована.")
+
+                    filename = f"Рабочая_программа_{selected.replace(' ', '_')}.docx"
+                    st.download_button(
+                        label="📥 Скачать DOCX",
+                        data=docx_bytes,
+                        file_name=filename,
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        use_container_width=True,
+                    )
+
+                    with st.expander("Предпросмотр структуры"):
+                        st.json(content)
+
+                except Exception as e:
+                    st.error(f"Ошибка генерации рабочей программы: {e}")
