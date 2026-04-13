@@ -107,7 +107,6 @@ UNIVERSITY_OPTIONS = [
     "Ваш университет",
 ]
 
-
 def select_or_custom(label: str, options: list[str], default: str = "", key: str = "") -> str:
     clean_options = []
     seen = set()
@@ -127,58 +126,21 @@ def select_or_custom(label: str, options: list[str], default: str = "", key: str
     if default and default in full_options:
         default_index = full_options.index(default)
 
+    widget_key = key if key else label
+
     selected = st.selectbox(
         label,
         full_options,
         index=default_index,
-        key=f"{key}_select"
+        key=f"{widget_key}_select"
     )
 
     if selected == "Свой вариант":
         return st.text_input(
             f"{label} — свой вариант",
             value=default,
-            key=f"{key}_custom"
+            key=f"{widget_key}_custom"
         ).strip()
-
-    return selected 
-
-def select_or_custom(label: str, options: list[str], default: str = "") -> str:
-    """
-    Выпадающий список с поиском + возможность ввести свой вариант.
-    """
-    normalized_options = []
-    seen = set()
-
-    if default and default not in options:
-        options = [default] + options
-
-    for item in options:
-        value = str(item).strip()
-        if value and value not in seen:
-            normalized_options.append(value)
-            seen.add(value)
-
-    full_options = ["Свой вариант"] + normalized_options
-
-    default_index = 0
-    if default and default in full_options:
-        default_index = full_options.index(default)
-
-    selected = st.selectbox(
-        label,
-        full_options,
-        index=default_index,
-        key=f"select_{label}"
-    )
-
-    if selected == "Свой вариант":
-        custom_value = st.text_input(
-            f"{label} — введите свой вариант",
-            value=default,
-            key=f"custom_{label}"
-        )
-        return custom_value.strip()
 
     return selected
 
