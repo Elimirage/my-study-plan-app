@@ -9,6 +9,47 @@ from ai import completion_with_ai
 from fgos import extract_text_from_pdf_file, extract_competencies_full, detect_profile_from_fgos
 from profstandart import analyze_prof_standard
 
+import streamlit as st
+
+
+def select_or_custom(label: str, options: list[str], default: str = "") -> str:
+    """
+    Выпадающий список с поиском + возможность ввести свой вариант.
+    """
+    normalized_options = []
+    seen = set()
+
+    if default and default not in options:
+        options = [default] + options
+
+    for item in options:
+        value = str(item).strip()
+        if value and value not in seen:
+            normalized_options.append(value)
+            seen.add(value)
+
+    full_options = ["Свой вариант"] + normalized_options
+
+    default_index = 0
+    if default and default in full_options:
+        default_index = full_options.index(default)
+
+    selected = st.selectbox(
+        label,
+        full_options,
+        index=default_index,
+        key=f"select_{label}"
+    )
+
+    if selected == "Свой вариант":
+        custom_value = st.text_input(
+            f"{label} — введите свой вариант",
+            value=default,
+            key=f"custom_{label}"
+        )
+        return custom_value.strip()
+
+    return selected
 
 def apply_edit_command(df: pd.DataFrame, command: dict) -> tuple[pd.DataFrame, str]:
     action = command.get("action")
@@ -335,12 +376,84 @@ with tab_rpd:
             if detected_profiles:
                 profile = detected_profiles[0]
 
-            direction_code = st.text_input("Код направления", value="09.03.01")
-            direction_name = st.text_input("Направление подготовки", value="Информатика и вычислительная техника")
-            qualification = st.text_input("Квалификация", value="бакалавр")
-            education_form = st.text_input("Форма обучения", value="очная")
-            university_name = st.text_input("Университет", value="Ваш университет")
-            faculty_name = st.text_input("Факультет", value="Ваш факультет")
+            direction_code = select_or_custom(
+                "Код направления",
+                [
+                    "09.03.01",
+                    "09.04.01",
+                    "40.03.01",
+                    "40.04.01",
+                    "44.03.01",
+                    "44.04.01",
+                    "38.03.01",
+                    "38.04.01",
+                    "37.03.01",
+                    "54.03.01",
+                ],
+                default="09.03.01"
+            )
+
+            direction_name = select_or_custom(
+                "Направление подготовки",
+                [
+                    "Информатика и вычислительная техника",
+                    "Прикладная информатика",
+                    "Информационные системы и технологии",
+                    "Юриспруденция",
+                    "Педагогическое образование",
+                    "Экономика",
+                    "Менеджмент",
+                    "Психология",
+                    "Дизайн",
+                ],
+                default="Информатика и вычислительная техника"
+            )
+
+            qualification = select_or_custom(
+                "Квалификация",
+                [
+                    "бакалавр",
+                    "магистр",
+                    "специалист",
+                ],
+                default="бакалавр"
+            )
+
+            education_form = select_or_custom(
+                "Форма обучения",
+                [
+                    "очная",
+                    "очно-заочная",
+                    "заочная",
+                ],
+                default="очная"
+            )
+
+            university_name = select_or_custom(
+                "Университет",
+                [
+                    "Ваш университет",
+                    "Пензенский государственный университет",
+                    "Московский государственный университет",
+                    "Санкт-Петербургский государственный университет",
+                    "Казанский федеральный университет",
+                    "Уральский федеральный университет",
+                ],
+                default="Ваш университет"
+            )
+
+            faculty_name = select_or_custom(
+                "Факультет",
+                [
+                    "Ваш факультет",
+                    "Факультет вычислительной техники",
+                    "Юридический факультет",
+                    "Экономический факультет",
+                    "Педагогический факультет",
+                    "Факультет информационных технологий",
+                ],
+                default="Ваш факультет"
+            )
 
             row = df[df["Дисциплина"] == selected].iloc[0].to_dict()
 
