@@ -73,7 +73,27 @@ with tab_plan:
     st.header("Генерация учебного плана")
 
     uploaded_fgos = st.file_uploader("Загрузите ФГОС", type=["pdf", "txt"], key="fgos_uploader")
-    uploaded_tf = st.file_uploader("Загрузите профстандарт", type=["pdf", "txt"], key="prof_uploader")
+    uploaded_tf = st.file_uploader(
+        "Загрузите профстандарт (необязательно)",
+        type=["pdf", "txt"],
+        key="prof_uploader"
+    )
+
+    # Инициализация session_state
+    if "df_fgos" not in st.session_state:
+        st.session_state.df_fgos = pd.DataFrame()
+
+    if "fgos_text" not in st.session_state:
+        st.session_state.fgos_text = ""
+
+    if "tf_struct" not in st.session_state:
+        st.session_state.tf_struct = {"TF": []}
+
+    if "prof_text" not in st.session_state:
+        st.session_state.prof_text = ""
+
+    if "detected_profiles" not in st.session_state:
+        st.session_state.detected_profiles = []
 
     if uploaded_fgos:
         with st.spinner("Обработка ФГОС..."):
@@ -105,14 +125,16 @@ with tab_plan:
                             if profiles:
                                 st.session_state.detected_profiles = profiles
                                 st.info(f"🎯 Определенный профиль: {', '.join(profiles)}")
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            st.warning(f"⚠️ Не удалось определить профиль: {e}")
                     else:
                         st.warning("⚠️ Компетенции не найдены.")
                         st.session_state.df_fgos = pd.DataFrame()
-            except Exception:
+
+            except Exception as e:
                 st.session_state.df_fgos = pd.DataFrame()
                 st.session_state.fgos_text = ""
+                st.error(f"Ошибка при обработке ФГОС: {e}")
 
     if uploaded_tf:
         with st.spinner("Обработка профстандарта..."):
@@ -124,13 +146,18 @@ with tab_plan:
                     uploaded_tf.seek(0)
 
                 if not prof_text or len(prof_text.strip()) < 50:
-                    st.session_state.tf_struct = {}
+                    st.session_state.tf_struct = {"TF": []}
                     st.session_state.prof_text = ""
+                    st.warning("⚠️ Не удалось извлечь текст из профстандарта.")
                 else:
                     st.session_state.prof_text = prof_text
                     tf_struct, error = analyze_prof_standard(prof_text)
 
-                    if tf_struct and not error:
+                    if error:
+                        st.session_state.tf_struct = {"TF": []}
+                        st.warning(f"⚠️ Ошибка анализа профстандарта: {error}")
+
+                    elif tf_struct:
                         st.session_state.tf_struct = tf_struct
                         tf_list = tf_struct.get("TF", [])
 
@@ -149,31 +176,40 @@ with tab_plan:
                             st.success(f"✅ Профстандарт обработан. Найдено ТФ: {len(tf_list)}")
                             st.dataframe(df_tf, use_container_width=True, height=300)
                         else:
-                            st.session_state.tf_struct = {}
+                            st.session_state.tf_struct = {"TF": []}
+                            st.warning("⚠️ Трудовые функции не найдены в профстандарте.")
                     else:
-                        st.session_state.tf_struct = {}
-            except Exception:
-                st.session_state.tf_struct = {}
+                        st.session_state.tf_struct = {"TF": []}
+                        st.warning("⚠️ Не удалось обработать профстандарт.")
+
+            except Exception as e:
+                st.session_state.tf_struct = {"TF": []}
                 st.session_state.prof_text = ""
+                st.error(f"Ошибка при обработке профстандарта: {e}")
 
-    if uploaded_fgos and uploaded_tf:
-        fgos_ready = not st.session_state.get("df_fgos", pd.DataFrame()).empty
-        prof_ready = len(st.session_state.get("tf_struct", {}).get("TF", [])) > 0
+    # Генерация плана теперь возможна и без профстандарта
+    fgos_ready = not st.session_state.get("df_fgos", pd.DataFrame()).empty
+    tf_struct = st.session_state.get("tf_struct", {"TF": []})
 
-        if fgos_ready and prof_ready:
-            if st.button("🚀 Сгенерировать учебный план", type="primary", use_container_width=True):
-                try:
-                    df = generate_plan_pipeline(
-                        st.session_state.df_fgos,
-                        st.session_state.tf_struct,
-                        {},
-                        st.session_state.fgos_text
-                    )
-                    st.session_state.df = df
-                    st.success("✅ Учебный план успешно сгенерирован!")
-                    st.balloons()
-                except Exception as e:
-                    st.error(str(e))
+    if fgos_ready:
+        if len(tf_struct.get("TF", [])) > 0:
+            st.info(f"Профстандарт загружен: найдено ТФ {len(tf_struct.get('TF', []))}")
+        else:
+            st.info("Профстандарт не загружен или не распознан. План будет сгенерирован без него.")
+
+        if st.button("🚀 Сгенерировать учебный план", type="primary", use_container_width=True):
+            try:
+                df = generate_plan_pipeline(
+                    st.session_state.df_fgos,
+                    tf_struct,
+                    {},
+                    st.session_state.get("fgos_text", "")
+                )
+                st.session_state.df = df
+                st.success("✅ Учебный план успешно сгенерирован!")
+                st.balloons()
+            except Exception as e:
+                st.error(f"Ошибка генерации учебного плана: {e}")
 
     if "df" in st.session_state:
         st.subheader("📊 Сформированный учебный план")
@@ -204,6 +240,7 @@ with tab_chat:
             st.session_state.chat_mode = "consultation"
 
         col1, col2 = st.columns(2)
+
         if col1.button("🔵 Консультация", use_container_width=True):
             st.session_state.chat_mode = "consultation"
             st.session_state.consultation_messages = []
@@ -222,10 +259,11 @@ with tab_chat:
 
             plan_context = {
                 "disciplines_count": len(df),
-                "profile": st.session_state.get("detected_profiles", ["не определен"])[0],
+                "profile": st.session_state.get("detected_profiles", ["не определен"])[0]
+                if st.session_state.get("detected_profiles") else "не определен",
                 "competencies_count": len(st.session_state.get("df_fgos", pd.DataFrame())),
                 "tf_count": len(st.session_state.get("tf_struct", {}).get("TF", [])),
-                "disciplines_list": df["Дисциплина"].tolist(),
+                "disciplines_list": df["Дисциплина"].tolist() if "Дисциплина" in df.columns else [],
                 "chat_history": st.session_state.consultation_messages
             }
 
