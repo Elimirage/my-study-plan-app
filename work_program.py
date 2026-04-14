@@ -1,9 +1,9 @@
 import io
 import json
+from datetime import datetime
 from typing import Any, Dict, List
 
 from docx import Document
-from docx.enum.section import WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, Cm
@@ -55,10 +55,6 @@ def _safe_json_from_text(text: str) -> Dict[str, Any]:
 
 
 def _extract_competencies_only(row: Dict[str, Any]) -> List[str]:
-    """
-    Берем только компетенции ФГОС: УК-..., ОПК-..., ПК-...
-    Трудовые функции A/01.3 и т.п. сюда не попадают.
-    """
     raw = row.get("Компетенции ФГОС", [])
     items = _normalize_list(raw)
 
@@ -68,7 +64,6 @@ def _extract_competencies_only(row: Dict[str, Any]) -> List[str]:
         if upper.startswith("УК-") or upper.startswith("ОПК-") or upper.startswith("ПК-"):
             result.append(item)
 
-    # Уникальные с сохранением порядка
     seen = set()
     unique = []
     for item in result:
@@ -79,9 +74,6 @@ def _extract_competencies_only(row: Dict[str, Any]) -> List[str]:
 
 
 def _extract_tf_only(row: Dict[str, Any]) -> List[str]:
-    """
-    Отдельно берем трудовые функции.
-    """
     raw = row.get("Трудовые функции", [])
     items = _normalize_list(raw)
 
@@ -107,11 +99,17 @@ def _set_base_style(doc: Document) -> None:
     section = doc.sections[0]
     section.top_margin = Cm(2)
     section.bottom_margin = Cm(2)
-    section.left_margin = Cm(2.5)
+    section.left_margin = Cm(3)
     section.right_margin = Cm(1.5)
 
 
-def _set_cell_text(cell, text: str, bold: bool = False, align=WD_ALIGN_PARAGRAPH.LEFT, size: int = 11) -> None:
+def _set_cell_text(
+    cell,
+    text: str,
+    bold: bool = False,
+    align=WD_ALIGN_PARAGRAPH.LEFT,
+    size: int = 11,
+) -> None:
     cell.text = ""
     p = cell.paragraphs[0]
     p.alignment = align
@@ -150,6 +148,22 @@ def _add_heading(doc: Document, text: str) -> None:
     p.paragraph_format.space_after = Pt(6)
 
 
+def _add_signature_line(doc: Document, title: str, person: str = "") -> None:
+    table = doc.add_table(rows=1, cols=3)
+    table.alignment = WD_TABLE_ALIGNMENT.LEFT
+    table.style = "Table Grid"
+
+    row = table.rows[0].cells
+    _set_cell_text(row[0], title, size=12)
+    _set_cell_text(row[1], "__________________", align=WD_ALIGN_PARAGRAPH.CENTER, size=12)
+    _set_cell_text(
+        row[2],
+        person if person else "__________________",
+        align=WD_ALIGN_PARAGRAPH.CENTER,
+        size=12,
+    )
+
+
 def generate_work_program_content(
     discipline_row: Dict[str, Any],
     profile: str,
@@ -163,7 +177,7 @@ def generate_work_program_content(
     discipline_name = _safe_str(discipline_row.get("Дисциплина"))
     semester = _safe_int(discipline_row.get("Семестр"), 1)
     hours = _safe_int(discipline_row.get("Часы"), 108)
-    control_form = _safe_str(discipline_row.get("Форма контроля")) or "зачет"
+    control_form = _safe_str(discipline_row.get("Форма контроля")) or "зачёт"
 
     competencies = _extract_competencies_only(discipline_row)
     tf_list = _extract_tf_only(discipline_row)
@@ -198,20 +212,27 @@ def generate_work_program_content(
 - Обоснование дисциплины: {reason if reason else "не указано"}
 
 СТРОГИЕ ПРАВИЛА:
-1. Используй ТОЛЬКО компетенции ФГОС (УК-..., ОПК-..., ПК-...) в таблице результатов.
-2. НЕ включай трудовые функции профстандарта в таблицу результатов.
+1. Используй только компетенции ФГОС (УК-..., ОПК-..., ПК-...) в таблице результатов.
+2. Не включай трудовые функции профстандарта в таблицу результатов.
 3. Трудовые функции можно упоминать только в описательном тексте, если это уместно.
 4. Содержание должно соответствовать дисциплине "{discipline_name}".
 5. Сделай документ реалистичным для вуза РФ.
-6. Должно быть минимум:
-   - 6 тем в лекциях,
-   - 3 лабораторных или практических работ,
+6. Минимум:
+   - 8 тем лекций,
+   - 4 лабораторных или практических работ,
    - 4 строки самостоятельной работы,
    - 5 источников литературы.
-7. Общая трудоемкость и часы должны быть правдоподобно распределены.
-8. Не используй пустые заглушки типа "Текст", "Описание", "и т.д.".
-9. Если дисциплина гуманитарная, не вставляй ИТ-содержание.
-10. Если дисциплина техническая, не вставляй юридическое содержание.
+7. Таблица структуры должна содержать не менее 6 строк.
+8. Самостоятельная работа должна быть разнообразной:
+   - подготовка к занятиям,
+   - анализ практики,
+   - реферат,
+   - решение кейсов.
+9. Не используй "..." и пустые заглушки.
+10. Программное обеспечение и оборудование должны быть конкретными.
+11. Используй минимум 1 УК, 1 ОПК и 1 ПК.
+12. Если дисциплина гуманитарная, не вставляй ИТ-содержание.
+13. Если дисциплина техническая, не вставляй юридическое содержание.
 
 Верни JSON такой структуры:
 {{
@@ -247,21 +268,21 @@ def generate_work_program_content(
     }}
   ],
   "lecture_topics": [
-    "Тема ..."
+    "Тема 1.1. ..."
   ],
   "lab_topics": [
     {{
-      "name": "Лабораторная работа 1. ...",
+      "name": "Практическое занятие 1. ...",
       "hours": 2
     }}
   ],
   "education_technologies": [
-    "..."
+    "Проблемное обучение"
   ],
   "self_study_rows": [
     {{
       "weeks": "1-2",
-      "topic": "Тема ...",
+      "topic": "Тема 1.1. ...",
       "kind": "Подготовка к занятиям",
       "task": "Конкретное задание",
       "literature": "1-3",
@@ -270,42 +291,19 @@ def generate_work_program_content(
   ],
   "assessment_tools": [
     "Опрос",
-    "Проверка лабораторных работ",
+    "Проверка практических работ",
     "{control_form}"
   ],
   "literature": [
     "1. ..."
   ],
   "software": [
-    "..."
+    "КонсультантПлюс"
   ],
   "equipment": [
-    "..."
+    "Компьютерный класс"
   ]
 }}
-ДОПОЛНИТЕЛЬНЫЕ ТРЕБОВАНИЯ:
-
-1. Минимум 8-10 тем дисциплины
-2. Минимум 4 лабораторных или практических работы
-3. Минимум 4 образовательные технологии (не базовые)
-4. Не использовать "..." или пустые значения
-5. Программное обеспечение должно быть конкретным (например: КонсультантПлюс, Гарант)
-6. Материально-техническое обеспечение должно быть конкретным
-7. Можно использовать трудовые функции профстандарта ТОЛЬКО в тексте, не в таблицах
-8. Количество строк в таблице структуры должно соответствовать количеству тем (не менее 6)
-9. Использовать минимум 1 УК, 1 ОПК и 1 ПК
-10. Самостоятельная работа должна включать разные виды деятельности (не только подготовка к занятиям)
-
-ФИНАЛЬНЫЕ ТРЕБОВАНИЯ:
-
-1. Таблица структуры должна содержать не менее 6 строк
-2. Количество строк должно быть близко к количеству тем лекций
-3. Самостоятельная работа должна включать:
-   - подготовку к занятиям
-   - анализ судебной практики
-   - написание реферата
-   - решение кейсов
-4. Все элементы должны быть разнообразными
 """
 
     raw = call_yandex_lite(
@@ -349,6 +347,37 @@ def create_work_program_docx(data: Dict[str, Any]) -> bytes:
     total_credits = _safe_int(data.get("total_credits"), 3)
     total_hours = _safe_int(data.get("total_hours"), 108)
 
+    current_year = datetime.now().year
+    city_name = "Пенза"
+
+    # Блок "Утверждаю"
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run = p.add_run("УТВЕРЖДАЮ")
+    run.bold = True
+    run.font.name = "Times New Roman"
+    run.font.size = Pt(12)
+
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run = p.add_run("Декан факультета")
+    run.font.name = "Times New Roman"
+    run.font.size = Pt(12)
+
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run = p.add_run("__________________ /__________________/")
+    run.font.name = "Times New Roman"
+    run.font.size = Pt(12)
+
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run = p.add_run(f'"____" __________ {current_year} г.')
+    run.font.name = "Times New Roman"
+    run.font.size = Pt(12)
+
+    _add_paragraph(doc, "", align=WD_ALIGN_PARAGRAPH.CENTER)
+
     # Титульный лист
     _add_paragraph(doc, "МИНИСТЕРСТВО НАУКИ И ВЫСШЕГО ОБРАЗОВАНИЯ", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
     _add_paragraph(doc, "РОССИЙСКОЙ ФЕДЕРАЦИИ", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
@@ -365,6 +394,9 @@ def create_work_program_docx(data: Dict[str, Any]) -> bytes:
     _add_paragraph(doc, f"Направленность подготовки: «{profile}»", align=WD_ALIGN_PARAGRAPH.LEFT)
     _add_paragraph(doc, f"Квалификация выпускника: {qualification}", align=WD_ALIGN_PARAGRAPH.LEFT)
     _add_paragraph(doc, f"Форма обучения: {education_form}", align=WD_ALIGN_PARAGRAPH.LEFT)
+
+    _add_paragraph(doc, "", align=WD_ALIGN_PARAGRAPH.CENTER)
+    _add_paragraph(doc, f"{city_name}, {current_year}", align=WD_ALIGN_PARAGRAPH.CENTER)
 
     doc.add_page_break()
 
@@ -460,7 +492,12 @@ def create_work_program_docx(data: Dict[str, Any]) -> bytes:
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
         hdr = table.rows[0].cells
-        _set_cell_text(hdr[0], "Наименование лабораторной / практической работы", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+        _set_cell_text(
+            hdr[0],
+            "Наименование лабораторной / практической работы",
+            bold=True,
+            align=WD_ALIGN_PARAGRAPH.CENTER
+        )
         _set_cell_text(hdr[1], "Часы", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
 
         for item in lab_topics:
@@ -518,6 +555,13 @@ def create_work_program_docx(data: Dict[str, Any]) -> bytes:
     _add_paragraph(doc, "в) Материально-техническое обеспечение", bold=True, align=WD_ALIGN_PARAGRAPH.LEFT)
     for item in data.get("equipment", []):
         _add_paragraph(doc, f"• {_safe_str(item)}")
+
+    # Подписи в конце
+    _add_paragraph(doc, "", align=WD_ALIGN_PARAGRAPH.LEFT)
+    _add_heading(doc, "8. Лист согласования")
+    _add_signature_line(doc, "Разработчик рабочей программы")
+    _add_signature_line(doc, "Заведующий кафедрой")
+    _add_signature_line(doc, "Председатель методической комиссии")
 
     buffer = io.BytesIO()
     doc.save(buffer)
