@@ -1,6 +1,6 @@
 import os
-import requests
 import json
+import requests
 import pytesseract
 import streamlit as st
 
@@ -53,13 +53,124 @@ def post_to_yandex(messages, model_name: str, temperature: float, max_tokens: in
 
     return response.json()
 
+
 tesseract_path = os.getenv("TESSERACT_CMD")
 if tesseract_path:
     pytesseract.pytesseract.tesseract_cmd = tesseract_path
 
 
+def extract_json(text: str):
+    try:
+        start = text.index("{")
+        end = text.rindex("}") + 1
+        return json.loads(text[start:end])
+    except Exception:
+        return {
+            "action": "error",
+            "value": "Некорректный JSON от модели"
+        }
+
+
+def call_yandex_lite(messages, temperature=0.3, max_tokens=1500):
+    result = post_to_yandex(
+        messages=messages,
+        model_name=YANDEX_MODEL_LITE,
+        temperature=temperature,
+        max_tokens=max_tokens
+    )
+
+    return result["result"]["alternatives"][0]["message"]["text"]
+
+
+def detect_profile_type(profile: str) -> str:
+    p = (profile or "").lower()
+
+    if any(x in p for x in [
+        "информатика",
+        "вычислительная техника",
+        "информационные технологии",
+        "программ",
+        "09.03",
+        "09.04"
+    ]):
+        return "technical"
+
+    if any(x in p for x in [
+        "педагог",
+        "образование",
+        "учитель",
+        "44.03",
+        "44.04"
+    ]):
+        return "pedagogical"
+
+    if any(x in p for x in [
+        "живопись",
+        "искусств",
+        "дизайн",
+        "художе",
+        "54.05",
+        "50.03"
+    ]):
+        return "art"
+
+    if any(x in p for x in [
+        "математика",
+        "физика",
+        "прикладные математика и физика",
+        "03.04",
+        "03.03"
+    ]):
+        return "science"
+
+    return "generic"
+
+
+def get_profile_warning(profile: str) -> str:
+    profile_type = detect_profile_type(profile)
+
+    if profile_type == "technical":
+        return """
+Профиль технический.
+Запрещено использовать педагогические дисциплины, воспитательную работу,
+методику преподавания, образовательные технологии, учащихся и обучающихся.
+Фокус: программирование, алгоритмы, базы данных, операционные системы,
+архитектура вычислительных систем, сети, разработка ПО.
+"""
+
+    if profile_type == "science":
+        return """
+Профиль физико-математический.
+Запрещено использовать педагогические дисциплины, воспитательную работу,
+методику преподавания, образовательные технологии, учащихся и обучающихся.
+Фокус: математическое моделирование, физика, численные методы,
+дифференциальные уравнения, вычислительные методы.
+"""
+
+    if profile_type == "art":
+        return """
+Профиль художественный.
+Запрещено использовать ИТ-дисциплины и педагогический шаблон.
+Фокус: академический рисунок, живопись, композиция, история искусств,
+цветоведение, художественные материалы, реставрация.
+"""
+
+    if profile_type == "pedagogical":
+        return """
+Профиль педагогический.
+Разрешены педагогика, психология, методика обучения, образовательные технологии,
+воспитательная деятельность.
+"""
+
+    return f"""
+Профиль: {profile}.
+Выбирай только те компетенции и формулировки, которые соответствуют этому профилю.
+"""
+
+
 def consult_with_methodologist(prompt: str, plan_context: dict = None) -> str:
     context_info = ""
+
     if plan_context:
         disciplines_count = plan_context.get("disciplines_count", 0)
         profile = plan_context.get("profile", "не определен")
@@ -72,6 +183,8 @@ def consult_with_methodologist(prompt: str, plan_context: dict = None) -> str:
 - Количество дисциплин: {disciplines_count}
 - Компетенций ФГОС: {competencies_count}
 - Трудовых функций: {tf_count}
+
+{get_profile_warning(profile)}
 """
 
         disciplines_list = plan_context.get("disciplines_list", [])
@@ -81,45 +194,30 @@ def consult_with_methodologist(prompt: str, plan_context: dict = None) -> str:
                 context_info += f"{i}. {disc}\n"
 
     system_prompt = f"""
-Ты — опытный методист вуза РФ с 20+ годами опыта в разработке учебных планов.
+Ты — методист вуза РФ.
 
 Твоя роль:
-- Консультируешь по вопросам учебных планов
-- Анализируешь соответствие ФГОС и профстандартам
-- Даешь профессиональные рекомендации
-- Отвечаешь на вопросы о компетенциях, дисциплинах, структуре плана
-- Помогаешь улучшить учебный план
+- консультировать по учебным планам;
+- анализировать соответствие ФГОС и профстандартам;
+- давать рекомендации по улучшению учебного плана.
 
 {context_info}
 
-СТИЛЬ ОБЩЕНИЯ:
-- Профессиональный, но дружелюбный
-- Конкретный и по делу
-- С примерами и рекомендациями
-- Структурированные ответы
+ВАЖНО:
+1. Не переноси дисциплины и формулировки из других профилей.
+2. Не используй педагогический шаблон для непедагогических направлений.
+3. Если профиль технический, художественный или физико-математический,
+   не предлагай педагогические дисциплины.
+4. Отвечай только по текущему профилю.
 
 ОТВЕЧАЙ:
-- На русском языке
-- Развернуто, но по существу
-- С конкретными рекомендациями
-- Учитывая контекст учебного плана
-
-ЕСЛИ СПРАШИВАЮТ О РЕДАКТИРОВАНИИ ПЛАНА:
-- Объясни, что нужно сделать
-- Предложи конкретные изменения
-- Укажи, в каком режиме это лучше сделать (редактирование)
+- на русском языке;
+- профессионально;
+- конкретно;
+- без лишней воды.
 """
 
     messages = [{"role": "system", "text": system_prompt}]
-
-    if plan_context and plan_context.get("chat_history"):
-        history = []
-        for msg in plan_context["chat_history"][-5:]:
-            role = msg.get("role")
-            content = msg.get("content")
-            if role and content:
-                history.append({"role": role, "text": content})
-        messages.extend(history)
 
     messages.append({"role": "user", "text": prompt})
 
@@ -127,38 +225,71 @@ def consult_with_methodologist(prompt: str, plan_context: dict = None) -> str:
         result = post_to_yandex(
             messages=messages,
             model_name=YANDEX_MODEL_CHAT,
-            temperature=0.7,
+            temperature=0.3,
             max_tokens=2000
         )
+
         return result["result"]["alternatives"][0]["message"]["text"]
+
     except Exception as e:
         return f"Извините, произошла ошибка при обращении к методисту: {e}"
 
+
 def completion_with_ai(prompt: str) -> str:
     system_prompt = """
-Ты — ИИ, который ДОЛЖЕН возвращать строго JSON.
+Ты — система редактирования учебного плана.
 
-ТВОИ ЖЁСТКИЕ ПРАВИЛА:
-1) Никакого текста до JSON.
-2) Никакого текста после JSON.
-3) Никаких комментариев.
-4) Никаких пояснений.
-5) Только один объект JSON.
+ТВОЯ ЗАДАЧА:
+Преобразовать команду пользователя в один JSON-объект.
 
-Формат JSON-команды:
+ТЫ НЕ ДОЛЖЕН:
+- писать пояснения;
+- писать текст до JSON;
+- писать текст после JSON;
+- добавлять новую дисциплину, если пользователь просит изменить существующую;
+- менять профиль подготовки;
+- придумывать педагогические дисциплины;
+- возвращать Markdown.
+
+ВАЖНОЕ ПРАВИЛО:
+Если пользователь пишет "добавь экзамен по дисциплине X",
+это значит нужно ОБНОВИТЬ поле "Форма контроля" у существующей дисциплины X,
+а НЕ добавлять новую дисциплину.
+
+Если пользователь пишет "увеличь часы по дисциплине X",
+нужно обновить поле "Часы", но не уменьшать значение случайно.
+Если точное значение не указано, верни error.
+
+ФОРМАТЫ JSON:
 
 UPDATE:
 {
   "action": "update",
-  "discipline": "Название",
+  "discipline": "Название дисциплины",
   "field": "Часы",
-  "value": 72
+  "value": 144
+}
+
+UPDATE ФОРМЫ КОНТРОЛЯ:
+{
+  "action": "update",
+  "discipline": "Операционные системы",
+  "field": "Форма контроля",
+  "value": "экзамен"
+}
+
+MOVE:
+{
+  "action": "update",
+  "discipline": "Архитектура вычислительных систем",
+  "field": "Семестр",
+  "value": 4
 }
 
 DELETE:
 {
   "action": "delete",
-  "discipline": "Название"
+  "discipline": "Название дисциплины"
 }
 
 ADD:
@@ -166,22 +297,24 @@ ADD:
   "action": "add",
   "field": "row",
   "value": {
-    "Блок": "...",
+    "Блок": "Блок 1. Вариативная часть",
     "Семестр": 1,
-    "Дисциплина": "...",
+    "Дисциплина": "Название дисциплины",
     "Часы": 72,
     "Форма контроля": "зачёт",
     "Компетенции ФГОС": [],
     "Трудовые функции": "",
-    "Обоснование": "Добавлено вручную"
+    "Обоснование": "Добавлено через ИИ-консультанта"
   }
 }
 
-ЕСЛИ НЕ МОЖЕШЬ ПОНЯТЬ КОМАНДУ — ВЕРНИ:
+ERROR:
 {
   "action": "error",
-  "value": "Причина"
+  "value": "Причина ошибки"
 }
+
+Верни только JSON.
 """
 
     messages = [
@@ -193,30 +326,26 @@ ADD:
         result = post_to_yandex(
             messages=messages,
             model_name=YANDEX_MODEL_CHAT,
-            temperature=0.1,
+            temperature=0.02,
             max_tokens=500
         )
+
         text = result["result"]["alternatives"][0]["message"]["text"]
+        parsed = extract_json(text)
+
+        return json.dumps(parsed, ensure_ascii=False)
+
     except Exception as e:
-        return f"Ошибка обращения к модели: {e}"
+        return json.dumps({
+            "action": "error",
+            "value": f"Ошибка обращения к модели: {e}"
+        }, ensure_ascii=False)
 
-    try:
-        start = text.index("{")
-        end = text.rindex("}") + 1
-        return text[start:end]
-    except ValueError:
-        return f"Не удалось извлечь JSON.\nОтвет модели:\n{text}"
-def call_yandex_lite(messages, temperature=0.3, max_tokens=1500):
-    result = post_to_yandex(
-        messages=messages,
-        model_name=YANDEX_MODEL_LITE,
-        temperature=temperature,
-        max_tokens=max_tokens
-    )
 
-    return result["result"]["alternatives"][0]["message"]["text"]
 def enrich_discipline_metadata(discipline, df_fgos, tf_struct, profile="", fgos_text=""):
     import pandas as pd
+
+    discipline_name = discipline.get("name", "") if isinstance(discipline, dict) else str(discipline)
 
     if df_fgos is None or (isinstance(df_fgos, pd.DataFrame) and df_fgos.empty):
         fgos_json = "[]"
@@ -225,7 +354,7 @@ def enrich_discipline_metadata(discipline, df_fgos, tf_struct, profile="", fgos_
         try:
             fgos_json = df_fgos.to_json(orient="records", force_ascii=False)
             competencies_list = df_fgos["code"].tolist()
-        except:
+        except Exception:
             fgos_json = "[]"
             competencies_list = []
 
@@ -234,79 +363,87 @@ def enrich_discipline_metadata(discipline, df_fgos, tf_struct, profile="", fgos_
     tf_info = []
     for tf in tf_list[:15]:
         tf_code = tf.get("code", "")
-        tf_name = tf.get("name", "")[:100]
-        if tf_code:
+        tf_name = tf.get("name", "")[:120]
+
+        if tf_code and tf_name:
             tf_info.append(f"{tf_code}: {tf_name}")
+        elif tf_code:
+            tf_info.append(tf_code)
 
-    profile_hints = {
-        "педагогика": "\nВАЖНО: Это педагогический профиль. Компетенции должны быть педагогическими (ОПК, ПК педагогические).",
-        "образован": "\nВАЖНО: Это педагогический профиль. Компетенции должны быть педагогическими (ОПК, ПК педагогические).",
-        "ивт": "\nПрофиль: ИТ. Компетенции должны быть техническими (ПК-1, ПК-2, ПК-3 и т.д.).",
-        "информатик": "\nПрофиль: ИТ. Компетенции должны быть техническими (ПК-1, ПК-2, ПК-3 и т.д.).",
-        "экономика": "\nПрофиль: Экономика. Компетенции должны быть экономическими (ПК-1, ПК-2, ПК-3 экономические).",
-        "юриспруденция": "\nПрофиль: Юриспруденция. Компетенции должны быть юридическими (ПК-1, ПК-2, ПК-3 юридические).",
-        "психология": "\nПрофиль: Психология. Компетенции должны быть психологическими (ПК-1, ПК-2, ПК-3 психологические).",
-        "менеджмент": "\nПрофиль: Менеджмент. Компетенции должны быть управленческими (ПК-1, ПК-2, ПК-3 управленческие).",
-        "дизайн": "\nПрофиль: Дизайн. Компетенции должны быть дизайнерскими (ПК-1, ПК-2, ПК-3 дизайнерские).",
-    }
-
-    profile_lower = profile.lower()
-    profile_hint = ""
-    for key, hint in profile_hints.items():
-        if key in profile_lower:
-            profile_hint = hint
-            break
-
-    if not profile_hint:
-        profile_hint = f"\nПрофиль: {profile}. Выбирай компетенции, соответствующие данному профилю."
+    profile_warning = get_profile_warning(profile)
 
     prompt = f"""
-Ты — опытный методист вуза РФ с 15+ годами опыта.
+Ты — методист российского вуза.
 
-Дисциплина: "{discipline['name']}"
-Профиль: {profile}
-{profile_hint}
+Дисциплина:
+{discipline_name}
 
-Доступные компетенции ФГОС (первые 20):
-{', '.join(competencies_list[:20]) if competencies_list else 'Не указаны'}
+Профиль подготовки:
+{profile}
+
+{profile_warning}
+
+Доступные компетенции ФГОС:
+{', '.join(competencies_list[:25]) if competencies_list else 'Не указаны'}
 
 Полный список компетенций:
-{fgos_json[:2000]}
+{fgos_json[:2500]}
 
 Трудовые функции профстандарта:
 {chr(10).join(tf_info) if tf_info else 'Не указаны'}
 
-ТВОЯ ЗАДАЧА:
-1. Выбрать 2-4 компетенции ФГОС, которые РЕАЛЬНО формирует эта дисциплина
-2. Выбрать 0-3 трудовые функции, которые РЕАЛЬНО поддерживает эта дисциплина
-3. Написать КОНКРЕТНОЕ обоснование (не шаблонное!)
+ЗАДАЧА:
+1. Выбери 2-4 компетенции ФГОС, которые реально формирует дисциплина.
+2. Выбери 0-3 трудовые функции, которые реально поддерживает дисциплина.
+3. Напиши короткое конкретное обоснование.
 
-Верни строго JSON:
-{{
+ЖЁСТКИЕ ПРАВИЛА:
+1. Не используй педагогические формулировки для непедагогического профиля.
+2. Не связывай технические дисциплины с воспитанием, обучающимися и методикой преподавания.
+3. Не связывай художественные дисциплины с программированием, если это не указано в названии.
+4. Используй только компетенции из списка.
+5. Верни только JSON.
+
+Формат:
+{
   "competencies": ["УК-1", "ОПК-2"],
   "TF": ["A/01.3"],
-  "reason": "Конкретное обоснование (до 150 символов)"
-}}
+  "reason": "Краткое обоснование"
+}
 """
 
     try:
         raw = call_yandex_lite(
             [{"role": "user", "text": prompt}],
-            temperature=0.1,
+            temperature=0.03,
             max_tokens=800
         )
 
-        start = raw.index("{")
-        end = raw.rindex("}") + 1
-        result = json.loads(raw[start:end])
+        result = extract_json(raw)
 
         if not isinstance(result.get("competencies"), list):
             result["competencies"] = []
+
         if not isinstance(result.get("TF"), list):
             result["TF"] = []
+
         if not isinstance(result.get("reason"), str):
             result["reason"] = ""
 
+        valid_competencies = set(str(x) for x in competencies_list)
+
+        result["competencies"] = [
+            c for c in result["competencies"]
+            if str(c) in valid_competencies
+        ][:4]
+
+        result["TF"] = result["TF"][:3]
+
         return result
-    except:
-        return {"competencies": [], "TF": [], "reason": ""}
+
+    except Exception:
+        return {
+            "competencies": [],
+            "TF": [],
+            "reason": ""
+        }
