@@ -405,11 +405,11 @@ def enrich_discipline_metadata(discipline, df_fgos, tf_struct, profile="", fgos_
 5. Верни только JSON.
 
 Формат:
-{
+{{
   "competencies": ["УК-1", "ОПК-2"],
   "TF": ["A/01.3"],
   "reason": "Краткое обоснование"
-}
+}}
 """
 
     try:
