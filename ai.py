@@ -4,7 +4,7 @@ import requests
 import pytesseract
 import streamlit as st
 
-FOLDER_ID = "b1gqit7sg06eelrvh80t"
+FOLDER_ID = "b1gmqadknbamelp5jqj4"
 
 YANDEX_MODEL_LITE = "yandexgpt-lite"
 YANDEX_MODEL_CHAT = "yandexgpt"
